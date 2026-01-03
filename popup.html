@@ -1,0 +1,20 @@
+<link href="popup.css" rel="stylesheet" type="text/css" />
+<script type="module" src="popup.js"></script>
+
+<div class="container">
+  <h3>My Pass Manager</h3>
+
+  <div id="auth-section">
+    <input type="email" id="email" placeholder="Email" class="textbox" />
+    <input type="password" id="password" placeholder="Password" class="textbox" />
+    <button id="btn-login">Log In</button>
+    <button id="btn-signup">Sign Up</button>
+    <div id="auth-message"></div>
+  </div>
+
+  <div id="app-section" style="display:none;">
+    <div class="title">Your Saved Passwords</div>
+    <div class="bookmarks" id="password-list"></div>
+    <button id="btn-logout">Log Out</button>
+  </div>
+</div>
