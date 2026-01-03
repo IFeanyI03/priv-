@@ -12,49 +12,35 @@
             saveBtn.src = chrome.runtime.getURL("assets/save.png");
             saveBtn.className = "pass-save-btn";
             
-            // Basic styling to make it sit next to the input
+            // Styles
             saveBtn.style.cursor = "pointer";
             saveBtn.style.width = "20px";
             saveBtn.style.marginLeft = "5px";
             saveBtn.style.verticalAlign = "middle";
 
-            // Insert it right after the password field
+            // Insert button
             input.parentNode.insertBefore(saveBtn, input.nextSibling);
 
             // 3. Add Click Listener
             saveBtn.addEventListener("click", () => {
                 const password = input.value;
-                // Heuristic: The username is often the input before the password
-                // This is a simple guess; complex sites might need more logic
                 const form = input.closest("form");
                 const usernameInput = form ? form.querySelector('input[type="text"], input[type="email"]') : null;
                 const username = usernameInput ? usernameInput.value : "Unknown User";
                 const site = window.location.hostname;
 
-                savePassword(site, username, password);
+                // CHANGED: Send message to background.js instead of saving locally
+                chrome.runtime.sendMessage({
+                    type: "SAVE_PASSWORD",
+                    data: {
+                        site: site,
+                        username: username,
+                        password: password
+                    }
+                });
+                
+                alert("Sent to Supabase!");
             });
         });
     }
-
-    const savePassword = (site, username, password) => {
-        // Fetch existing passwords first
-        chrome.storage.sync.get(["passwords"], (result) => {
-            const currentPasswords = result.passwords ? JSON.parse(result.passwords) : [];
-            
-            const newEntry = {
-                id: Date.now(), // Unique ID for sharing later
-                site: site,
-                username: username,
-                password: password
-            };
-
-            const updatedPasswords = [...currentPasswords, newEntry];
-
-            chrome.storage.sync.set({
-                "passwords": JSON.stringify(updatedPasswords)
-            }, () => {
-                alert(`Password saved for ${site}!`);
-            });
-        });
-    };
 })();
