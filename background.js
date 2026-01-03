@@ -1,4 +1,4 @@
-import { supabase } from './supabaseClient.js';
+import { supabaseClient } from './supabaseClient.js';
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "SAVE_PASSWORD") {
@@ -8,7 +8,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function handleSavePassword(data) {
   // 1. Check if user is logged in
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await supabaseClient.auth.getUser();
 
   if (!user) {
     console.log("User not logged in. Cannot save.");
@@ -17,7 +17,7 @@ async function handleSavePassword(data) {
   }
 
   // 2. Insert into Supabase
-  const { error } = await supabase
+  const { error } = await supabaseClient
     .from('passwords')
     .insert({
       site: data.site,

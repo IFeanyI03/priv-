@@ -1,4 +1,5 @@
-import './lib/supabase.js'; 
+// 1. Import 'supabase' from the default export we just added
+import supabase from './lib/supabase.js'; 
 import config from './config.js';
 
 const { createClient } = supabase; 
@@ -24,6 +25,7 @@ const chromeStorageAdapter = {
   },
 };
 
+// 2. Create and Export 'supabaseClient'
 export const supabaseClient = createClient(config.SUPABASE_URL, config.SUPABASE_KEY, {
   auth: {
     storage: chromeStorageAdapter,
