@@ -1,44 +1,27 @@
 {
     "name": "privé extension",
     "version": "0.1.0",
-    "description": "Keepingg shared credentials a secret",
+    "description": "Keeping shared credentials a secret",
     "permissions": [
         "activeTab",
-        "tabs"
+        "tabs",
+        "storage",
+        "identity"
     ],
     "host_permissions": [
-        "https://*.netflix.com/*"
+        "<all_urls>"
     ],
     "background": {
-        "service_worker": "background.js"
+        "service_worker": "background.js",
+        "type": "module"
     },
     "content_scripts": [
         {
-            "matches": ["*://*/*"],
-            "js": [
-                "contentScript.js"
-            ]
-        }
-    ],
-    "web_accessible_resources": [
-        {
-            // "resources": [
-            //     "assets/bookmark.png",
-            //     "assets/play.png",
-            //     "assets/delete.png",
-            //     "assets/save.png"
-            // ],
-            "matches": [
-                "https://*.youtube.com/*"
-            ]
+            "matches": ["<all_urls>"],
+            "js": ["contentScript.js"]
         }
     ],
     "action": {
-        // "default_icon": {
-        //     "16": "assets/ext-icon.png",
-        //     "24": "assets/ext-icon.png",
-        //     "32": "assets/ext-icon.png"
-        // },
         "default_title": "privé",
         "default_popup": "popup.html"
     },
