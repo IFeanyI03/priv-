@@ -7,18 +7,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function handleSavePassword(data) {
-  // 1. Check if user is logged in
   const { data: { user } } = await supabaseClient.auth.getUser();
 
   if (!user) {
     console.log("User not logged in. Cannot save.");
-    // Optional: Send notification to user to login
     return;
   }
 
-  // 2. Insert into Supabase
+  // Changed table to 'credentials'
   const { error } = await supabaseClient
-    .from('passwords')
+    .from('credentials')
     .insert({
       site: data.site,
       username: data.username,
@@ -27,8 +25,8 @@ async function handleSavePassword(data) {
     });
 
   if (error) {
-    console.error("Error saving password:", error);
+    console.error("Error saving credential:", error);
   } else {
-    console.log("Password saved to cloud!");
+    console.log("Credential saved to cloud!");
   }
 }
