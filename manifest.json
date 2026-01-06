@@ -2,15 +2,8 @@
     "name": "privé extension",
     "version": "0.1.0",
     "description": "Keeping shared credentials a secret",
-    "permissions": [
-        "activeTab",
-        "tabs",
-        "storage",
-        "identity"
-    ],
-    "host_permissions": [
-        "<all_urls>"
-    ],
+    "permissions": ["activeTab", "tabs", "storage", "identity"],
+    "host_permissions": ["<all_urls>"],
     "background": {
         "service_worker": "background.js",
         "type": "module"
@@ -19,6 +12,12 @@
         {
             "matches": ["<all_urls>"],
             "js": ["contentScript.js"]
+        }
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": ["assets/save.png"],
+            "matches": ["<all_urls>"]
         }
     ],
     "action": {

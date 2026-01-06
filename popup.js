@@ -1,112 +1,163 @@
-import { supabaseClient } from './supabaseClient.js';
+import { supabaseClient } from "./supabaseClient.js";
 
-const authSection = document.getElementById('auth-section');
-const appSection = document.getElementById('app-section');
+const authSection = document.getElementById("auth-section");
+const appSection = document.getElementById("app-section");
+const msgDiv = document.getElementById("auth-message");
 const listElement = document.getElementById("password-list");
-const msgDiv = document.getElementById('auth-message');
 
-document.addEventListener('DOMContentLoaded', () => {
-  checkUser();
-  document.getElementById('btn-google-login').addEventListener('click', handleGoogleLogin);
-  document.getElementById('btn-logout').addEventListener('click', handleLogout);
+document.addEventListener("DOMContentLoaded", () => {
+    checkUser();
+    document
+        .getElementById("btn-google-login")
+        .addEventListener("click", handleGoogleLogin);
+    document
+        .getElementById("btn-logout")
+        .addEventListener("click", handleLogout);
 });
 
+// 1. CHECK USER STATUS
 async function checkUser() {
-  const { data: { session } } = await supabaseClient.auth.getSession();
-  if (session) {
-    showApp();
-    loadCredentials(); // Renamed function for clarity
-  } else {
-    showAuth();
-  }
+    const {
+        data: { session },
+    } = await supabaseClient.auth.getSession();
+    if (session) {
+        showApp();
+        loadCredentials();
+    } else {
+        showAuth();
+    }
 }
 
+// 2. LOAD SAVED PASSWORDS
 async function loadCredentials() {
-  listElement.innerHTML = "Loading...";
+    listElement.innerHTML = "Loading...";
 
-  // Changed table to 'credentials'
-  const { data: credentials, error } = await supabaseClient
-    .from('credentials')
-    .select('*')
-    .order('created_at', { ascending: false });
+    // Call the Secure RPC Function
+    const { data: credentials, error } = await supabaseClient.rpc(
+        "get_credentials"
+    );
 
-  if (error) {
-    listElement.innerText = "Error loading credentials.";
-    console.error(error);
-    return;
-  }
+    if (error) {
+        console.error("Error loading credentials:", error);
+        listElement.innerHTML = `<div style="color:red; text-align:center;">Error loading data.</div>`;
+        return;
+    }
 
-  listElement.innerHTML = "";
-  
-  if (!credentials || credentials.length === 0) {
-    listElement.innerHTML = "<i style='text-align:center; display:block; margin-top:20px; color:#888;'>No credentials saved yet.</i>";
-    return;
-  }
+    listElement.innerHTML = "";
 
-  credentials.forEach(item => {
-    const div = document.createElement("div");
-    div.className = "bookmark";
-    // Inline styles for a cleaner card look
-    div.style.cssText = "background: white; padding: 10px; margin-bottom: 8px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);";
-    
-    div.innerHTML = `
-      <div style="font-weight: bold; font-size: 14px;">${item.site}</div>
-      <div style="font-size: 12px; color: #555;">${item.username}</div>
-      <div style="font-size: 10px; color: #999; margin-top: 4px;">Password hidden</div>
+    if (!credentials || credentials.length === 0) {
+        listElement.innerHTML =
+            "<i style='text-align:center; display:block; margin-top:20px; color:#888;'>No credentials saved yet.</i>";
+        return;
+    }
+
+    credentials.forEach((item) => {
+        const div = document.createElement("div");
+        div.className = "bookmark";
+
+        // Use Google for icon, but use saved color for border
+        const faviconUrl = `https://www.google.com/s2/favicons?domain=${item.site}&sz=64`;
+        const accentColor =
+            item.color && item.color !== "" ? item.color : "#ddd"; // Default gray if no color
+
+        div.style.cssText = `
+      background: white; 
+      padding: 12px; 
+      margin-bottom: 10px; 
+      border-radius: 6px; 
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      border: 1px solid #eee;
+      border-left: 5px solid ${accentColor};
+      display: flex;
+      align-items: center;
+      gap: 12px;
     `;
-    listElement.appendChild(div);
-  });
-}
 
-// ... Keep your handleGoogleLogin, handleLogout, showApp, and showAuth functions exactly as they were ...
-// (Providing them below just in case)
+        div.innerHTML = `
+      <img src="${faviconUrl}" style="width: 32px; height: 32px; border-radius: 4px;" />
+      <div>
+        <div style="font-weight: bold; font-size: 14px; color: #333;">${
+            item.site || "Unknown Site"
+        }</div>
+        <div style="font-size: 12px; color: #666;">${
+            item.username || "No Username"
+        }</div>
+      </div>
+    `;
 
-async function handleGoogleLogin() {
-  msgDiv.innerText = "Launching Google Login...";
-  const { data, error } = await supabaseClient.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      redirectTo: chrome.identity.getRedirectURL(),
-      skipBrowserRedirect: true
-    }
-  });
-  if (error) {
-    msgDiv.innerText = "Error: " + error.message;
-    return;
-  }
-  chrome.identity.launchWebAuthFlow({ url: data.url, interactive: true }, async (redirectUrl) => {
-    if (chrome.runtime.lastError || !redirectUrl) {
-      msgDiv.innerText = "Login Cancelled.";
-      return;
-    }
-    const urlObj = new URL(redirectUrl);
-    const params = new URLSearchParams(urlObj.hash.substring(1));
-    const accessToken = params.get('access_token');
-    const refreshToken = params.get('refresh_token');
-    if (!accessToken) {
-      msgDiv.innerText = "No token found.";
-      return;
-    }
-    const { error: sessionError } = await supabaseClient.auth.setSession({
-      access_token: accessToken,
-      refresh_token: refreshToken
+        listElement.appendChild(div);
     });
-    if (sessionError) msgDiv.innerText = sessionError.message;
-    else checkUser();
-  });
 }
 
+// 3. HANDLE GOOGLE LOGIN (Restored)
+async function handleGoogleLogin() {
+    msgDiv.innerText = "Launching Google Login...";
+
+    const { data, error } = await supabaseClient.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+            redirectTo: chrome.identity.getRedirectURL(),
+            skipBrowserRedirect: true,
+        },
+    });
+
+    if (error) {
+        msgDiv.innerText = "Error: " + error.message;
+        return;
+    }
+
+    // Launch Chrome Identity Flow
+    chrome.identity.launchWebAuthFlow(
+        {
+            url: data.url,
+            interactive: true,
+        },
+        async (redirectUrl) => {
+            if (chrome.runtime.lastError || !redirectUrl) {
+                msgDiv.innerText = "Login Cancelled.";
+                return;
+            }
+
+            // Extract tokens from the URL
+            const urlObj = new URL(redirectUrl);
+            const params = new URLSearchParams(urlObj.hash.substring(1)); // Remove the '#'
+
+            const accessToken = params.get("access_token");
+            const refreshToken = params.get("refresh_token");
+
+            if (!accessToken) {
+                msgDiv.innerText = "No token found.";
+                return;
+            }
+
+            // Set the session in Supabase
+            const { error: sessionError } =
+                await supabaseClient.auth.setSession({
+                    access_token: accessToken,
+                    refresh_token: refreshToken,
+                });
+
+            if (sessionError) {
+                msgDiv.innerText = "Session Error: " + sessionError.message;
+            } else {
+                checkUser(); // Refresh UI
+            }
+        }
+    );
+}
+
+// 4. HANDLE LOGOUT (Restored)
 async function handleLogout() {
-  await supabaseClient.auth.signOut();
-  checkUser();
+    await supabaseClient.auth.signOut();
+    checkUser();
 }
 
+// 5. UI HELPERS
 function showApp() {
-  authSection.style.display = 'none';
-  appSection.style.display = 'block';
+    authSection.style.display = "none";
+    appSection.style.display = "block";
 }
-
 function showAuth() {
-  authSection.style.display = 'block';
-  appSection.style.display = 'none';
+    authSection.style.display = "block";
+    appSection.style.display = "none";
 }
