@@ -15,7 +15,7 @@ const addSaveButton = () => {
         saveBtn.style.cursor = "pointer";
         saveBtn.style.width = "20px";
         saveBtn.style.height = "20px";
-        saveBtn.style.marginLeft = "5px";
+        saveBtn.style.marginRight = "5px";
         saveBtn.style.verticalAlign = "middle";
         saveBtn.style.display = "inline-block";
         saveBtn.style.zIndex = "9999";
