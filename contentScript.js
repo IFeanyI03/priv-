@@ -91,31 +91,32 @@ function fillLoginForm(username, password) {
     const passwordInputs = document.querySelectorAll('input[type="password"]');
 
     if (passwordInputs.length === 0) {
-        // Optional: Alert user if no fields found
-        // alert("No password fields found on this page.");
         return;
     }
 
     passwordInputs.forEach((passInput) => {
         // 2. Fill the Password field
         setNativeValue(passInput, password);
+        
+        // --- DISABLE PASSWORD FIELD ---
+        passInput.disabled = true;
+        // Optional: Change background to indicate it's locked/filled
+        passInput.style.backgroundColor = "#e8f0fe"; 
 
         // 3. Try to find the associated username field
-        // Heuristic: Look inside the same <form>
         const form = passInput.closest("form");
-
         let userInput = null;
         if (form) {
-            // Look for text or email inputs in the same form
             userInput = form.querySelector(
                 'input[type="text"], input[type="email"]'
             );
-        } else {
-            // Fallback could go here (e.g., check previous sibling)
         }
 
         if (userInput) {
             setNativeValue(userInput, username);
+            // --- DISABLE USERNAME FIELD ---
+            userInput.disabled = true;
+            userInput.style.backgroundColor = "#e8f0fe";
         }
     });
 }
@@ -131,7 +132,6 @@ function setNativeValue(element, value) {
     const event = new Event("input", { bubbles: true });
 
     // React hack: React tracks value property descriptor
-    // We need to notify the value tracker that the value has changed
     const tracker = element._valueTracker;
     if (tracker) {
         tracker.setValue(lastValue);

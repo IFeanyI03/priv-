@@ -109,9 +109,6 @@ async function loadCredentials() {
                             password: item.password,
                         },
                     });
-
-                    // Optional: Provide feedback or close popup
-                    // window.close();
                 }
             } catch (err) {
                 console.error("Failed to send credentials to page:", err);
@@ -123,7 +120,7 @@ async function loadCredentials() {
     });
 }
 
-// 3. HANDLE GOOGLE LOGIN (Restored)
+// 3. HANDLE GOOGLE LOGIN
 async function handleGoogleLogin() {
     msgDiv.innerText = "Launching Google Login...";
 
@@ -180,7 +177,7 @@ async function handleGoogleLogin() {
     );
 }
 
-// 4. HANDLE LOGOUT (Restored)
+// 4. HANDLE LOGOUT
 async function handleLogout() {
     await supabaseClient.auth.signOut();
     checkUser();
