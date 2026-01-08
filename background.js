@@ -1,10 +1,14 @@
 import { supabaseClient } from "./supabaseClient.js";
 
-// 1. LISTEN for the save message
+// 1. LISTEN for messages from contentScript
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "SAVE_PASSWORD") {
         console.log(" [Background] Message received:", message.data);
         handleSavePassword(message.data);
+    } 
+    else if (message.type === "OPEN_POPUP") {
+        console.log(" [Background] Opening Extension Popup Window");
+        handleOpenPopup();
     }
 });
 
@@ -22,7 +26,6 @@ async function handleSavePassword(data) {
 
     console.log(" [Background] Saving for User ID:", user.id);
 
-    // FIX: Changed 'p_icon' to 'p_logo' to match your SQL function
     const { data: savedData, error } = await supabaseClient.rpc(
         "insert_credential",
         {
@@ -30,7 +33,7 @@ async function handleSavePassword(data) {
             p_username: data.username,
             p_password: data.password,
             p_color: data.color || "",
-            p_logo: data.icon || "", // <--- This maps the JS 'icon' to SQL 'p_logo'
+            p_logo: data.icon || "", 
         }
     );
 
@@ -40,6 +43,22 @@ async function handleSavePassword(data) {
             JSON.stringify(error, null, 2)
         );
     } else {
-        console.log(" [Success] Saved Data via RPC:", savedData);
+        // Optional: Check custom status if you implemented the existence check
+        if (savedData && savedData.status === 'exists') {
+             console.log("Duplicate ignored:", savedData.message);
+        } else {
+             console.log(" [Success] Saved Data via RPC:", savedData);
+        }
     }
+}
+
+// 3. HANDLE OPENING POPUP (As a window)
+function handleOpenPopup() {
+    chrome.windows.create({
+        url: "popup.html",
+        type: "popup",
+        width: 360,
+        height: 600,
+        focused: true
+    });
 }

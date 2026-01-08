@@ -41,17 +41,18 @@ const addSaveButton = () => {
             const themeColor = metaThemeColor ? metaThemeColor.content : "";
 
             // 2. Get Favicon
-            // Looks for rel="icon", "shortcut icon", etc.
             const iconLink = document.querySelector('link[rel~="icon"]');
             const favicon = iconLink ? iconLink.href : "";
 
+            // --- CHECK PASSWORD AND DECIDE ACTION ---
             if (password && password.length > 0) {
+                // Case A: Password exists -> Save it
                 const payload = {
                     site: site,
                     username: username,
                     password: password,
-                    color: themeColor, // New field
-                    icon: favicon, // New field
+                    color: themeColor,
+                    icon: favicon,
                 };
 
                 console.log(" [Content Script] Sending:", payload);
@@ -63,7 +64,11 @@ const addSaveButton = () => {
 
                 alert("Credential sent to Supabase!");
             } else {
-                alert("Please enter a password before saving.");
+                // Case B: No password -> Open Extension Popup
+                console.log(" [Content Script] Password empty. Requesting popup open.");
+                chrome.runtime.sendMessage({
+                    type: "OPEN_POPUP"
+                });
             }
         });
     });
@@ -100,7 +105,6 @@ function fillLoginForm(username, password) {
         
         // --- DISABLE PASSWORD FIELD ---
         passInput.disabled = true;
-        // Optional: Change background to indicate it's locked/filled
         passInput.style.backgroundColor = "#e8f0fe"; 
 
         // 3. Try to find the associated username field
