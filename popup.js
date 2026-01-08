@@ -71,7 +71,13 @@ async function loadCredentials() {
       display: flex;
       align-items: center;
       gap: 12px;
+      cursor: pointer;
+      transition: background 0.2s;
     `;
+
+        // Add hover effect
+        div.onmouseover = () => (div.style.background = "#f9f9f9");
+        div.onmouseout = () => (div.style.background = "white");
 
         div.innerHTML = `
       <img src="${faviconUrl}" style="width: 32px; height: 32px; border-radius: 4px;" />
@@ -84,6 +90,34 @@ async function loadCredentials() {
         }</div>
       </div>
     `;
+
+        // --- CLICK TO FILL HANDLER ---
+        div.addEventListener("click", async () => {
+            try {
+                // Get the active tab
+                const [tab] = await chrome.tabs.query({
+                    active: true,
+                    currentWindow: true,
+                });
+
+                if (tab?.id) {
+                    // Send message to contentScript
+                    await chrome.tabs.sendMessage(tab.id, {
+                        type: "FILL_CREDENTIALS",
+                        data: {
+                            username: item.username,
+                            password: item.password,
+                        },
+                    });
+
+                    // Optional: Provide feedback or close popup
+                    // window.close();
+                }
+            } catch (err) {
+                console.error("Failed to send credentials to page:", err);
+            }
+        });
+        // -----------------------------
 
         listElement.appendChild(div);
     });

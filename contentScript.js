@@ -1,5 +1,3 @@
-// contentScript.js
-
 const addSaveButton = () => {
     const passwordInputs = document.querySelectorAll('input[type="password"]');
 
@@ -79,3 +77,66 @@ const observer = new MutationObserver(() => {
     addSaveButton();
 });
 observer.observe(document.body, { childList: true, subtree: true });
+
+// --- LISTEN FOR FILL COMMAND ---
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === "FILL_CREDENTIALS") {
+        const { username, password } = message.data;
+        fillLoginForm(username, password);
+    }
+});
+
+function fillLoginForm(username, password) {
+    // 1. Find all password inputs on the page
+    const passwordInputs = document.querySelectorAll('input[type="password"]');
+
+    if (passwordInputs.length === 0) {
+        // Optional: Alert user if no fields found
+        // alert("No password fields found on this page.");
+        return;
+    }
+
+    passwordInputs.forEach((passInput) => {
+        // 2. Fill the Password field
+        setNativeValue(passInput, password);
+
+        // 3. Try to find the associated username field
+        // Heuristic: Look inside the same <form>
+        const form = passInput.closest("form");
+
+        let userInput = null;
+        if (form) {
+            // Look for text or email inputs in the same form
+            userInput = form.querySelector(
+                'input[type="text"], input[type="email"]'
+            );
+        } else {
+            // Fallback could go here (e.g., check previous sibling)
+        }
+
+        if (userInput) {
+            setNativeValue(userInput, username);
+        }
+    });
+}
+
+/**
+ * Helper to programmatically set value and trigger React/Angular/Vue change events
+ */
+function setNativeValue(element, value) {
+    const lastValue = element.value;
+    element.value = value;
+
+    // Create a new 'input' event
+    const event = new Event("input", { bubbles: true });
+
+    // React hack: React tracks value property descriptor
+    // We need to notify the value tracker that the value has changed
+    const tracker = element._valueTracker;
+    if (tracker) {
+        tracker.setValue(lastValue);
+    }
+
+    element.dispatchEvent(event);
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+}
