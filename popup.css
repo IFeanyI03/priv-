@@ -1,25 +1,63 @@
 /* popup.css */
-body {
-  width: 360px;
-  height: 600px; /* Max allowed height for Chrome Extensions */
+
+/* 1. Global Reset & sizing to fit the window exactly */
+html, body {
+  width: 100%;
+  height: 100%;
   margin: 0;
   padding: 0;
+  overflow: hidden; /* Prevents scrollbars on the window itself */
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   background-color: #f9f9f9;
+  box-sizing: border-box;
 }
 
+/* 2. Main Container: Uses Flexbox to manage vertical space */
 .container {
-  padding: 15px;
+  width: 100%;
   height: 100%;
-  box-sizing: border-box;
+  padding: 15px;
+  box-sizing: border-box; /* Ensures padding is included in width/height */
   display: flex;
   flex-direction: column;
 }
 
-/* ... keep your existing styles for buttons and inputs ... */
-
-.bookmarks {
-  flex-grow: 1;
-  overflow-y: auto; /* Allow scrolling for the list */
-  margin-top: 10px;
+/* 3. Header & Auth Sections (Fixed height, no shrink) */
+h3, .title, #auth-section {
+  flex-shrink: 0; /* Prevents these from squishing */
 }
+
+h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  text-align: center;
+}
+
+/* 4. Scrollable Area: The list takes remaining space */
+.bookmarks {
+  flex-grow: 1;           /* Takes up all available remaining space */
+  overflow-y: auto;       /* Only this specific area scrolls */
+  overflow-x: hidden;     /* No horizontal scroll */
+  margin-top: 10px;
+  margin-bottom: 10px;
+  padding-right: 5px;     /* Space for the internal scrollbar */
+}
+
+/* Optional: Style the internal scrollbar to look cleaner (Chrome/Edge) */
+.bookmarks::-webkit-scrollbar {
+  width: 6px;
+}
+.bookmarks::-webkit-scrollbar-track {
+  background: transparent;
+}
+.bookmarks::-webkit-scrollbar-thumb {
+  background-color: #ccc;
+  border-radius: 10px;
+}
+
+/* 5. Buttons (Fixed at bottom if inside container, or part of flow) */
+button {
+  flex-shrink: 0;
+}
+
+/* ... (Keep your existing styles for .bookmark items) ... */
