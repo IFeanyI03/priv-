@@ -15,7 +15,6 @@ document.addEventListener("DOMContentLoaded", () => {
         .addEventListener("click", handleLogout);
 });
 
-// 1. CHECK USER STATUS
 async function checkUser() {
     const {
         data: { session },
@@ -28,11 +27,9 @@ async function checkUser() {
     }
 }
 
-// 2. LOAD SAVED PASSWORDS
 async function loadCredentials() {
     listElement.innerHTML = "Loading...";
 
-    // Call the Secure RPC Function
     const { data: credentials, error } = await supabaseClient.rpc(
         "get_credentials"
     );
@@ -55,60 +52,78 @@ async function loadCredentials() {
         const div = document.createElement("div");
         div.className = "bookmark";
 
-        // Use Google for icon, but use saved color for border
         const faviconUrl = `https://www.google.com/s2/favicons?domain=${item.site}&sz=64`;
         const accentColor =
-            item.color && item.color !== "" ? item.color : "#ddd"; // Default gray if no color
+            item.color && item.color !== "" ? item.color : "#ddd"; 
 
         div.style.cssText = `
-      background: white; 
-      padding: 12px; 
-      margin-bottom: 10px; 
-      border-radius: 6px; 
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-      border: 1px solid #eee;
-      border-left: 5px solid ${accentColor};
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      cursor: pointer;
-      transition: background 0.2s;
-    `;
+            background: white; 
+            padding: 12px; 
+            margin-bottom: 10px; 
+            border-radius: 6px; 
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            border: 1px solid #eee;
+            border-left: 5px solid ${accentColor};
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            transition: background 0.2s;
+        `;
 
-        // Add hover effect
         div.onmouseover = () => (div.style.background = "#f9f9f9");
         div.onmouseout = () => (div.style.background = "white");
 
         div.innerHTML = `
-      <img src="${faviconUrl}" style="width: 32px; height: 32px; border-radius: 4px;" />
-      <div>
-        <div style="font-weight: bold; font-size: 14px; color: #333;">${
-            item.site || "Unknown Site"
-        }</div>
-        <div style="font-size: 12px; color: #666;">${
-            item.username || "No Username"
-        }</div>
-      </div>
-    `;
+            <img src="${faviconUrl}" style="width: 32px; height: 32px; border-radius: 4px;" />
+            <div>
+                <div style="font-weight: bold; font-size: 14px; color: #333;">${
+                    item.site || "Unknown Site"
+                }</div>
+                <div style="font-size: 12px; color: #666;">${
+                    item.username || "No Username"
+                }</div>
+            </div>
+        `;
 
-        // --- CLICK TO FILL HANDLER ---
+        // --- UPDATED CLICK HANDLER ---
         div.addEventListener("click", async () => {
             try {
-                // Get the active tab
-                const [tab] = await chrome.tabs.query({
-                    active: true,
-                    currentWindow: true,
-                });
+                let targetTabId = null;
+                let isDetachedWindow = false;
 
-                if (tab?.id) {
-                    // Send message to contentScript
-                    await chrome.tabs.sendMessage(tab.id, {
+                // 1. Check if we have a stored target tab (from the 'Notification' style popup)
+                const storage = await chrome.storage.local.get(['target_tab_id']);
+                
+                if (storage.target_tab_id) {
+                    targetTabId = storage.target_tab_id;
+                    isDetachedWindow = true; // We assume if this is set, we are in the special window
+                    
+                    // Clean up: remove the ID so normal clicks don't get confused later
+                    await chrome.storage.local.remove(['target_tab_id']);
+                } else {
+                    // 2. Fallback: Standard "Bubble" behavior (Extension Icon Click)
+                    const [tab] = await chrome.tabs.query({
+                        active: true,
+                        currentWindow: true,
+                    });
+                    targetTabId = tab?.id;
+                }
+
+                if (targetTabId) {
+                    // Send the message to the correct tab
+                    await chrome.tabs.sendMessage(targetTabId, {
                         type: "FILL_CREDENTIALS",
                         data: {
                             username: item.username,
                             password: item.password,
                         },
                     });
+
+                    // If we are in the detached window, close it automatically after filling
+                    if (isDetachedWindow) {
+                        window.close();
+                    }
                 }
             } catch (err) {
                 console.error("Failed to send credentials to page:", err);
@@ -120,10 +135,9 @@ async function loadCredentials() {
     });
 }
 
-// 3. HANDLE GOOGLE LOGIN
+// ... (Rest of login/logout logic remains the same) ...
 async function handleGoogleLogin() {
     msgDiv.innerText = "Launching Google Login...";
-
     const { data, error } = await supabaseClient.auth.signInWithOAuth({
         provider: "google",
         options: {
@@ -137,7 +151,6 @@ async function handleGoogleLogin() {
         return;
     }
 
-    // Launch Chrome Identity Flow
     chrome.identity.launchWebAuthFlow(
         {
             url: data.url,
@@ -148,11 +161,8 @@ async function handleGoogleLogin() {
                 msgDiv.innerText = "Login Cancelled.";
                 return;
             }
-
-            // Extract tokens from the URL
             const urlObj = new URL(redirectUrl);
-            const params = new URLSearchParams(urlObj.hash.substring(1)); // Remove the '#'
-
+            const params = new URLSearchParams(urlObj.hash.substring(1));
             const accessToken = params.get("access_token");
             const refreshToken = params.get("refresh_token");
 
@@ -161,7 +171,6 @@ async function handleGoogleLogin() {
                 return;
             }
 
-            // Set the session in Supabase
             const { error: sessionError } =
                 await supabaseClient.auth.setSession({
                     access_token: accessToken,
@@ -171,19 +180,17 @@ async function handleGoogleLogin() {
             if (sessionError) {
                 msgDiv.innerText = "Session Error: " + sessionError.message;
             } else {
-                checkUser(); // Refresh UI
+                checkUser();
             }
         }
     );
 }
 
-// 4. HANDLE LOGOUT
 async function handleLogout() {
     await supabaseClient.auth.signOut();
     checkUser();
 }
 
-// 5. UI HELPERS
 function showApp() {
     authSection.style.display = "none";
     appSection.style.display = "block";

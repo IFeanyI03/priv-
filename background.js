@@ -1,14 +1,20 @@
 import { supabaseClient } from "./supabaseClient.js";
 
-// 1. LISTEN for messages from contentScript
+// 1. LISTEN for messages
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "SAVE_PASSWORD") {
         console.log(" [Background] Message received:", message.data);
         handleSavePassword(message.data);
     } 
     else if (message.type === "OPEN_POPUP") {
-        console.log(" [Background] Opening Extension Popup Window");
-        handleOpenPopup();
+        // --- KEY FIX: Save the ID of the tab that requested the popup ---
+        if (sender.tab && sender.tab.id) {
+            chrome.storage.local.set({ 'target_tab_id': sender.tab.id }, () => {
+                handleOpenPopup();
+            });
+        } else {
+            handleOpenPopup();
+        }
     }
 });
 
@@ -24,8 +30,6 @@ async function handleSavePassword(data) {
         return;
     }
 
-    console.log(" [Background] Saving for User ID:", user.id);
-
     const { data: savedData, error } = await supabaseClient.rpc(
         "insert_credential",
         {
@@ -38,12 +42,8 @@ async function handleSavePassword(data) {
     );
 
     if (error) {
-        console.error(
-            " [Supabase Error] Details:",
-            JSON.stringify(error, null, 2)
-        );
+        console.error(" [Supabase Error] Details:", JSON.stringify(error, null, 2));
     } else {
-        // Optional: Check custom status if you implemented the existence check
         if (savedData && savedData.status === 'exists') {
              console.log("Duplicate ignored:", savedData.message);
         } else {
@@ -52,13 +52,15 @@ async function handleSavePassword(data) {
     }
 }
 
-// 3. HANDLE OPENING POPUP (As a window)
+// 3. HANDLE OPENING POPUP
 function handleOpenPopup() {
+    // Opens a clean 'popup' type window (MetaMask style)
     chrome.windows.create({
         url: "popup.html",
         type: "popup",
         width: 360,
         height: 600,
-        focused: true
+        // 'focused: true' ensures it pops to the front
+        focused: true 
     });
 }
