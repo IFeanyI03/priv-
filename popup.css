@@ -1,18 +1,14 @@
 /* popup.css */
-
-/* 1. Global Reset: Fill the window completely */
-html,
-body {
+html, body {
     width: 100%;   
     height: 100%; 
     margin: 0;
     padding: 0;
-    overflow: hidden; /* Prevents scrollbars on the main window */
+    overflow: hidden; 
     font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
     background-color: #f9f9f9;
 }
 
-/* 2. Main Container: Stretches to fill the body */
 .container {
     width: 100%;    
     height: 100%;   
@@ -22,10 +18,7 @@ body {
     flex-direction: column;
 }
 
-/* 3. Header & Auth Sections (Fixed height, no shrink) */
-h3,
-.title,
-#auth-section {
+h3, .title, #auth-section, #setup-section, #unlock-section {
     flex-shrink: 0; 
 }
 
@@ -35,7 +28,6 @@ h3 {
     text-align: center;
 }
 
-/* 4. Scrollable Area: The list takes all REMAINING space */
 .bookmarks {
     flex-grow: 1;         
     overflow-y: auto;     
@@ -45,24 +37,10 @@ h3 {
     padding-right: 5px;   
 }
 
-/* Custom Scrollbar Styling */
-.bookmarks::-webkit-scrollbar {
-    width: 6px;
-}
-.bookmarks::-webkit-scrollbar-track {
-    background: transparent;
-}
-.bookmarks::-webkit-scrollbar-thumb {
-    background-color: #ccc;
-    border-radius: 10px;
-}
+.bookmarks::-webkit-scrollbar { width: 6px; }
+.bookmarks::-webkit-scrollbar-track { background: transparent; }
+.bookmarks::-webkit-scrollbar-thumb { background-color: #ccc; border-radius: 10px; }
 
-/* 5. Buttons */
-button {
-    flex-shrink: 0;
-}
-
-/* 6. Bookmark Item Styling */
 .bookmark {
     background: white; 
     padding: 12px; 
@@ -70,7 +48,6 @@ button {
     border-radius: 6px; 
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     border: 1px solid #eee;
-    /* border-left is handled dynamically in JS */
     display: flex;
     align-items: center;
     gap: 12px;
@@ -78,6 +55,6 @@ button {
     transition: background 0.2s;
 }
 
-.bookmark:hover {
-    background: #f9f9f9;
-}
+.bookmark:hover { background: #f9f9f9; }
+
+button { flex-shrink: 0; }
