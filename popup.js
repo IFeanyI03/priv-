@@ -13,8 +13,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("btn-setup").addEventListener("click", handleSetup);
     document.getElementById("btn-unlock").addEventListener("click", handleUnlock);
     
-    // Lock button closes the window (which technically keeps it unlocked in background until restart, 
-    // unless we explicitly call LOCK_VAULT. Let's add explicit lock.)
     document.getElementById("btn-lock").addEventListener("click", async () => {
         await chrome.runtime.sendMessage({ type: "LOCK_VAULT" });
         window.close();
@@ -26,24 +24,39 @@ document.addEventListener("DOMContentLoaded", async () => {
     await initFlow();
 });
 
+// --- NEW FLOW LOGIC ---
 async function initFlow() {
-    // 1. Is the vault set up?
+    // 1. CHECK LOGIN FIRST (Supabase)
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    
+    if (!session) {
+        // User is NOT logged in -> Show Login Screen
+        showSection(authSection);
+        return;
+    }
+
+    // 2. CHECK VAULT SETUP (Local Storage)
     const stored = await chrome.storage.local.get(["auth_salt"]);
     if (!stored.auth_salt) {
+        // User IS logged in, but Vault NOT set up -> Show Setup
         showSection(setupSection);
         return;
     }
 
-    // 2. Is the vault unlocked?
+    // 3. CHECK VAULT LOCK STATUS (Background Script)
     const { isLocked } = await chrome.runtime.sendMessage({ type: "CHECK_LOCK_STATUS" });
     if (isLocked) {
+        // Vault exists but is locked -> Show Unlock
         showSection(unlockSection);
         return;
     }
 
-    // 3. Is the user logged into Supabase?
-    checkUser();
+    // 4. ALL GOOD -> Show App
+    showSection(appSection);
+    loadCredentials();
 }
+
+// --- HANDLERS ---
 
 async function handleSetup() {
     const password = document.getElementById("setup-pass").value;
@@ -65,16 +78,6 @@ async function handleUnlock() {
         initFlow();
     } else {
         errDiv.innerText = "Incorrect password.";
-    }
-}
-
-async function checkUser() {
-    const { data: { session } } = await supabaseClient.auth.getSession();
-    if (session) {
-        showSection(appSection);
-        loadCredentials();
-    } else {
-        showSection(authSection);
     }
 }
 
@@ -115,21 +118,16 @@ async function loadCredentials() {
         div.addEventListener("click", async () => {
              const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
              const storage = await chrome.storage.local.get(['target_tab_id']);
-             
-             // Prioritize target_tab_id if this is a popup window
              const finalTabId = storage.target_tab_id || (tab ? tab.id : null);
              await chrome.storage.local.remove(['target_tab_id']);
 
              if(finalTabId) {
-                 // Send message to background to decrypt and fill
                  chrome.runtime.sendMessage({
                      type: "DECRYPT_AND_FILL",
                      encryptedPassword: item.password,
                      username: item.username,
                      tabId: finalTabId
                  });
-                 
-                 // Close window if it was opened as a detached popup
                  if(storage.target_tab_id) window.close();
              }
         });
@@ -180,7 +178,8 @@ async function handleGoogleLogin() {
             if (sessionError && msgDiv) {
                 msgDiv.innerText = "Session Error: " + sessionError.message;
             } else {
-                checkUser();
+                // Login Success -> Restart Flow (Will now check Vault)
+                initFlow();
             }
         }
     );
@@ -188,7 +187,8 @@ async function handleGoogleLogin() {
 
 async function handleLogout() {
     await supabaseClient.auth.signOut();
-    checkUser();
+    // Logout Success -> Restart Flow (Will now show Login)
+    initFlow();
 }
 
 function showSection(el) {
