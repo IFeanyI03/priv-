@@ -1,63 +1,83 @@
 /* popup.css */
 
-/* 1. Global Reset & sizing to fit the window exactly */
-html, body {
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  padding: 0;
-  overflow: hidden; /* Prevents scrollbars on the window itself */
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background-color: #f9f9f9;
-  box-sizing: border-box;
+/* 1. Global Reset: Fill the window completely */
+html,
+body {
+    width: 100%;   
+    height: 100%; 
+    margin: 0;
+    padding: 0;
+    overflow: hidden; /* Prevents scrollbars on the main window */
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f9f9f9;
 }
 
-/* 2. Main Container: Uses Flexbox to manage vertical space */
+/* 2. Main Container: Stretches to fill the body */
 .container {
-  width: 100%;
-  height: 100%;
-  padding: 15px;
-  box-sizing: border-box; /* Ensures padding is included in width/height */
-  display: flex;
-  flex-direction: column;
+    width: 100%;    
+    height: 100%;   
+    padding: 15px;  
+    box-sizing: border-box; 
+    display: flex;
+    flex-direction: column;
 }
 
 /* 3. Header & Auth Sections (Fixed height, no shrink) */
-h3, .title, #auth-section {
-  flex-shrink: 0; /* Prevents these from squishing */
+h3,
+.title,
+#auth-section {
+    flex-shrink: 0; 
 }
 
 h3 {
-  margin-top: 0;
-  margin-bottom: 15px;
-  text-align: center;
+    margin-top: 0;
+    margin-bottom: 15px;
+    text-align: center;
 }
 
-/* 4. Scrollable Area: The list takes remaining space */
+/* 4. Scrollable Area: The list takes all REMAINING space */
 .bookmarks {
-  flex-grow: 1;           /* Takes up all available remaining space */
-  overflow-y: auto;       /* Only this specific area scrolls */
-  overflow-x: hidden;     /* No horizontal scroll */
-  margin-top: 10px;
-  margin-bottom: 10px;
-  padding-right: 5px;     /* Space for the internal scrollbar */
+    flex-grow: 1;         
+    overflow-y: auto;     
+    overflow-x: hidden;
+    margin-top: 10px;
+    margin-bottom: 10px;
+    padding-right: 5px;   
 }
 
-/* Optional: Style the internal scrollbar to look cleaner (Chrome/Edge) */
+/* Custom Scrollbar Styling */
 .bookmarks::-webkit-scrollbar {
-  width: 6px;
+    width: 6px;
 }
 .bookmarks::-webkit-scrollbar-track {
-  background: transparent;
+    background: transparent;
 }
 .bookmarks::-webkit-scrollbar-thumb {
-  background-color: #ccc;
-  border-radius: 10px;
+    background-color: #ccc;
+    border-radius: 10px;
 }
 
-/* 5. Buttons (Fixed at bottom if inside container, or part of flow) */
+/* 5. Buttons */
 button {
-  flex-shrink: 0;
+    flex-shrink: 0;
 }
 
-/* ... (Keep your existing styles for .bookmark items) ... */
+/* 6. Bookmark Item Styling */
+.bookmark {
+    background: white; 
+    padding: 12px; 
+    margin-bottom: 10px; 
+    border-radius: 6px; 
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    border: 1px solid #eee;
+    /* border-left is handled dynamically in JS */
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.bookmark:hover {
+    background: #f9f9f9;
+}

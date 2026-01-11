@@ -21,8 +21,7 @@
         }
     ],
     "action": {
-        "default_title": "privé",
-        "default_popup": "popup.html"
+        "default_title": "privé"
     },
     "manifest_version": 3
 }

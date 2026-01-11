@@ -1,13 +1,25 @@
 import { supabaseClient } from "./supabaseClient.js";
 
-// 1. LISTEN for messages
+// 1. LISTEN FOR EXTENSION ICON CLICKS (Toolbar)
+chrome.action.onClicked.addListener((tab) => {
+    // When the icon is clicked, save the current tab ID and open the window
+    if (tab && tab.id) {
+        chrome.storage.local.set({ 'target_tab_id': tab.id }, () => {
+            handleOpenPopup();
+        });
+    } else {
+        handleOpenPopup();
+    }
+});
+
+// 2. LISTEN FOR MESSAGES (Content Script)
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "SAVE_PASSWORD") {
         console.log(" [Background] Message received:", message.data);
         handleSavePassword(message.data);
     } 
     else if (message.type === "OPEN_POPUP") {
-        // --- KEY FIX: Save the ID of the tab that requested the popup ---
+        // When requested by content script, save that tab's ID and open the window
         if (sender.tab && sender.tab.id) {
             chrome.storage.local.set({ 'target_tab_id': sender.tab.id }, () => {
                 handleOpenPopup();
@@ -18,7 +30,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 });
 
-// 2. SAVE to Supabase via RPC
+// 3. COMMON FUNCTION TO OPEN THE WINDOW
+function handleOpenPopup() {
+    chrome.windows.create({
+        url: "popup.html",
+        type: "popup",
+        width: 360,
+        height: 600,
+        focused: true
+    });
+}
+
+// 4. SAVE PASSWORD LOGIC
 async function handleSavePassword(data) {
     const {
         data: { user },
@@ -50,17 +73,4 @@ async function handleSavePassword(data) {
              console.log(" [Success] Saved Data via RPC:", savedData);
         }
     }
-}
-
-// 3. HANDLE OPENING POPUP
-function handleOpenPopup() {
-    // Opens a clean 'popup' type window (MetaMask style)
-    chrome.windows.create({
-        url: "popup.html",
-        type: "popup",
-        width: 360,
-        height: 600,
-        // 'focused: true' ensures it pops to the front
-        focused: true 
-    });
 }
