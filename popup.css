@@ -1,25 +1,34 @@
-/* popup.css */
-html, body {
-    width: 100%;   
-    height: 100%; 
+@import url('https://fonts.googleapis.com/css2?family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap');
+
+
+
+html,
+body {
+    width: 100%;
+    height: 100%;
     margin: 0;
     padding: 0;
-    overflow: hidden; 
-    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-    background-color: #f9f9f9;
+    overflow: hidden;
+    font-family: "Titillium Web", sans-serif;
+    background-color: #B4B8AB;
+    color: #153243;
 }
 
 .container {
-    width: 100%;    
-    height: 100%;   
-    padding: 15px;  
-    box-sizing: border-box; 
+    width: 100%;
+    height: 100%;
+    padding: 15px;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
 }
 
-h3, .title, #auth-section, #setup-section, #unlock-section {
-    flex-shrink: 0; 
+h3,
+.title,
+#auth-section,
+#setup-section,
+#unlock-section {
+    flex-shrink: 0;
 }
 
 h3 {
@@ -29,24 +38,33 @@ h3 {
 }
 
 .bookmarks {
-    flex-grow: 1;         
-    overflow-y: auto;     
+    flex-grow: 1;
+    overflow-y: auto;
     overflow-x: hidden;
     margin-top: 10px;
     margin-bottom: 10px;
-    padding-right: 5px;   
+    padding-right: 5px;
 }
 
-.bookmarks::-webkit-scrollbar { width: 6px; }
-.bookmarks::-webkit-scrollbar-track { background: transparent; }
-.bookmarks::-webkit-scrollbar-thumb { background-color: #ccc; border-radius: 10px; }
+.bookmarks::-webkit-scrollbar {
+    width: 6px;
+}
+
+.bookmarks::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.bookmarks::-webkit-scrollbar-thumb {
+    background-color: #ccc;
+    border-radius: 10px;
+}
 
 .bookmark {
-    background: white; 
-    padding: 12px; 
-    margin-bottom: 10px; 
-    border-radius: 6px; 
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    background: white;
+    padding: 12px;
+    margin-bottom: 10px;
+    border-radius: 6px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     border: 1px solid #eee;
     display: flex;
     align-items: center;
@@ -55,6 +73,10 @@ h3 {
     transition: background 0.2s;
 }
 
-.bookmark:hover { background: #f9f9f9; }
+.bookmark:hover {
+    background: #f9f9f9;
+}
 
-button { flex-shrink: 0; }
+button {
+    flex-shrink: 0;
+}
