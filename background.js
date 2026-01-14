@@ -1,102 +1,80 @@
 import { supabaseClient } from "./supabaseClient.js";
 import { 
-    deriveKey, 
     generateSalt, 
+    deriveKey, 
     encryptData, 
-    decryptData,
+    decryptData, 
     arrayBufferToBase64, 
     base64ToArrayBuffer 
 } from "./lib/crypto.js";
 
-// --- IN-MEMORY KEY STORAGE ---
-// This key is CLEARED when the browser/extension restarts or when locked manually.
-let sessionKey = null;
-
-// 1. LISTEN FOR EXTENSION ICON CLICKS (Toolbar)
-chrome.action.onClicked.addListener((tab) => {
-    if (tab && tab.id) {
-        chrome.storage.local.set({ 'target_tab_id': tab.id }, () => {
-            handleOpenPopup();
-        });
-    } else {
-        handleOpenPopup();
-    }
-});
-
-// 2. LISTEN FOR MESSAGES
+// 1. LISTEN for messages
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    // Return true to indicate we will sendResponse asynchronously
-    if (handleMessage(message, sender, sendResponse)) {
+    
+    // --- Existing Handlers ---
+    if (message.type === "SAVE_PASSWORD") {
+        console.log(" [Background] Saving Password...");
+        handleSavePassword(message.data).then(() => sendResponse({ success: true }));
+        return true; 
+    } 
+    else if (message.type === "OPEN_POPUP") {
+        if (sender.tab && sender.tab.id) {
+            chrome.storage.local.set({ 'target_tab_id': sender.tab.id }, () => {
+                handleOpenPopup();
+            });
+        } else {
+            handleOpenPopup();
+        }
+    }
+    
+    // --- NEW: Share Handlers ---
+    else if (message.type === "CREATE_SHARE") {
+        createShare(message.data).then(sendResponse);
+        return true; // Async response
+    }
+    else if (message.type === "GET_MY_SHARES") {
+        getMyShares().then(sendResponse);
+        return true;
+    }
+    else if (message.type === "REVOKE_SHARE") {
+        revokeShare(message.id).then(sendResponse);
+        return true;
+    }
+    else if (message.type === "RESOLVE_SHARED_LINK") {
+        resolveSharedLink(message.id, message.key).then(sendResponse);
         return true;
     }
 });
 
-async function handleMessage(message, sender, sendResponse) {
-    try {
-        switch (message.type) {
-            case "SETUP_MASTER_PASSWORD":
-                await handleSetup(message.password);
-                sendResponse({ success: true });
-                break;
+// ---------------------------------------------------------
+// EXISTING FUNCTIONS
+// ---------------------------------------------------------
 
-            case "UNLOCK_VAULT":
-                const success = await handleUnlock(message.password);
-                sendResponse({ success });
-                break;
-            
-            case "LOCK_VAULT":
-                sessionKey = null;
-                console.log(" [Background] Vault Locked");
-                sendResponse({ success: true });
-                break;
+async function handleSavePassword(data) {
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
 
-            case "CHECK_LOCK_STATUS":
-                sendResponse({ isLocked: sessionKey === null });
-                break;
+    if (authError || !user) {
+        console.error(" [Background] Auth Error or No User:", authError);
+        return;
+    }
 
-            case "SAVE_PASSWORD":
-                // If locked, open popup to force unlock
-                if (!sessionKey) {
-                    console.log(" [Background] Vault locked. Opening popup.");
-                    if(sender.tab?.id) {
-                         await chrome.storage.local.set({ 'target_tab_id': sender.tab.id });
-                    }
-                    handleOpenPopup();
-                    return;
-                }
-                await handleSavePassword(message.data);
-                break;
-
-            case "OPEN_POPUP":
-                if (sender.tab && sender.tab.id) {
-                    await chrome.storage.local.set({ 'target_tab_id': sender.tab.id });
-                }
-                handleOpenPopup();
-                break;
-                
-            case "DECRYPT_AND_FILL":
-                if (!sessionKey) return; // Locked
-                
-                // Decrypt the password here in background
-                const plainPass = await decryptData(message.encryptedPassword, sessionKey);
-                
-                // Send plain text ONLY to the specific content script tab
-                chrome.tabs.sendMessage(message.tabId, {
-                    type: "FILL_CREDENTIALS",
-                    data: {
-                        username: message.username,
-                        password: plainPass
-                    }
-                });
-                break;
+    const { data: savedData, error } = await supabaseClient.rpc(
+        "insert_credential",
+        {
+            p_site: data.site,
+            p_username: data.username,
+            p_password: data.password,
+            p_color: data.color || "",
+            p_logo: data.icon || "", 
         }
-    } catch (err) {
-        console.error("Background Error:", err);
-        sendResponse({ success: false, error: err.message });
+    );
+
+    if (error) {
+        console.error(" [Supabase Error] Details:", JSON.stringify(error, null, 2));
+    } else {
+        console.log(" [Success] Saved Data via RPC:", savedData);
     }
 }
-
-// --- HANDLERS ---
 
 function handleOpenPopup() {
     chrome.windows.create({
@@ -104,66 +82,128 @@ function handleOpenPopup() {
         type: "popup",
         width: 360,
         height: 600,
-        focused: true
+        focused: true 
     });
 }
 
-async function handleSetup(password) {
-    const salt = generateSalt();
-    const key = await deriveKey(password, salt);
+// ---------------------------------------------------------
+// NEW SHARE FUNCTIONS
+// ---------------------------------------------------------
 
-    // Create a "Validation Token" - encrypt the word "VALID"
-    const validationToken = await encryptData("VALID", key);
-
-    // Save Salt and Token to Disk (NEVER the password or key)
-    await chrome.storage.local.set({
-        auth_salt: arrayBufferToBase64(salt.buffer),
-        auth_validator: validationToken
-    });
-
-    sessionKey = key; // Unlock immediately
-    console.log(" [Background] Master Password Set & Vault Unlocked");
-}
-
-async function handleUnlock(password) {
-    const stored = await chrome.storage.local.get(["auth_salt", "auth_validator"]);
-    if (!stored.auth_salt || !stored.auth_validator) return false;
-
+// 1. CREATE SHARE (Uploads to DB)
+async function createShare(item) {
     try {
-        const salt = new Uint8Array(base64ToArrayBuffer(stored.auth_salt));
-        const key = await deriveKey(password, salt);
+        const { data: { user } } = await supabaseClient.auth.getUser();
+        if (!user) return { success: false, error: "Not logged in" };
 
-        // Try to decrypt the validator
-        const check = await decryptData(stored.auth_validator, key);
+        // A. Generate a random One-Time Password (OTP)
+        const linkPassword = crypto.randomUUID(); 
+        const salt = generateSalt();
+        const key = await deriveKey(linkPassword, salt);
+        
+        // B. Prepare Payload
+        const payload = JSON.stringify({
+            s: item.site,
+            u: item.username,
+            p: item.password, 
+            c: item.color,
+            i: item.logo || ""
+        });
+        
+        const encryptedData = await encryptData(payload, key);
+        const saltBase64 = arrayBufferToBase64(salt.buffer);
 
-        if (check === "VALID") {
-            sessionKey = key; 
-            console.log(" [Background] Vault Unlocked");
-            return true;
-        }
-    } catch (e) {
-        // Decryption failed = Wrong password
+        // C. Upload to Supabase 'credential_shares' table
+        const { data, error } = await supabaseClient
+            .from('credential_shares')
+            .insert({
+                credential_id: item.id, // Links to original credential
+                share_by: user.id,
+                shared_to: [],          // Starts empty
+                encrypted_data: encryptedData,
+                salt: saltBase64
+            })
+            .select()
+            .single();
+
+        if (error) throw error;
+
+        // D. Create URL
+        // Key is in the hash, so it is NOT sent to the server.
+        const shareUrl = `https://example.com/#share_id=${data.id}&key=${linkPassword}`;
+        
+        return { success: true, link: shareUrl };
+
+    } catch (err) {
+        console.error("Share Error:", err);
+        return { success: false, error: err.message };
     }
-    return false;
 }
 
-async function handleSavePassword(data) {
-    if (!sessionKey) return;
-
+// 2. GET SHARES (For "My Links" tab)
+async function getMyShares() {
     const { data: { user } } = await supabaseClient.auth.getUser();
-    if (!user) return;
+    if (!user) return { success: false };
 
-    // Encrypt password before sending to Supabase
-    const encryptedPassword = await encryptData(data.password, sessionKey);
+    const { data, error } = await supabaseClient
+        .from('credential_shares')
+        .select('*')
+        .eq('share_by', user.id)
+        .order('created_at', { ascending: false });
 
-    const { data: savedData, error } = await supabaseClient.rpc("insert_credential", {
-        p_site: data.site,
-        p_username: data.username,
-        p_password: encryptedPassword, // Storing encrypted string
-        p_color: data.color || "",
-        p_logo: data.icon || "", 
-    });
+    return { success: !error, data: data };
+}
+
+// 3. REVOKE SHARE (Delete from DB)
+async function revokeShare(shareId) {
+    const { error } = await supabaseClient
+        .from('credential_shares')
+        .delete()
+        .eq('id', shareId);
     
-    if (error) console.error("Supabase Save Error:", error);
-    else console.log("Saved successfully:", savedData);
+    return { success: !error, error: error?.message };
+}
+
+// 4. RESOLVE LINK (For Receiver)
+async function resolveSharedLink(shareId, linkPassword) {
+    try {
+        // A. Get Receiver User
+        const { data: { user } } = await supabaseClient.auth.getUser();
+        
+        // B. Fetch Encrypted Data
+        const { data, error } = await supabaseClient
+            .from('credential_shares')
+            .select('*')
+            .eq('id', shareId)
+            .single();
+
+        if (error || !data) return { success: false, error: "Link revoked or not found" };
+
+        // C. Decrypt locally
+        const salt = base64ToArrayBuffer(data.salt);
+        const key = await deriveKey(linkPassword, salt);
+        const jsonString = await decryptData(data.encrypted_data, key);
+        
+        if (!jsonString) throw new Error("Decryption failed");
+
+        // D. Update Access List (shared_to)
+        if (user && !data.shared_to.includes(user.id)) {
+            const updatedList = [...data.shared_to, user.id];
+            
+            // Fire and forget update
+            supabaseClient
+                .from('credential_shares')
+                .update({ shared_to: updatedList })
+                .eq('id', shareId)
+                .then(res => {
+                    if(res.error) console.error("Failed to update access list", res.error);
+                });
+        }
+
+        return { success: true, data: JSON.parse(jsonString) };
+
+    } catch (err) {
+        console.error(err);
+        return { success: false, error: "Invalid Key or Data Corrupted" };
+    }
 }
