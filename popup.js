@@ -1,23 +1,32 @@
 import { supabaseClient } from "./supabaseClient.js";
 
+// --- UI ELEMENTS ---
 const authSection = document.getElementById("auth-section");
 const appSection = document.getElementById("app-section");
+const setupSection = document.getElementById("setup-section");
+const unlockSection = document.getElementById("unlock-section");
 const msgDiv = document.getElementById("auth-message");
 
-// UI Elements for Tabs
 const tabPasswords = document.getElementById("tab-passwords");
 const tabShares = document.getElementById("tab-shares");
 const passwordList = document.getElementById("password-list");
 const shareList = document.getElementById("share-list");
 
+// --- INITIALIZATION ---
 document.addEventListener("DOMContentLoaded", () => {
+    // 1. Check Auth & Vault Status
     checkUser();
-    
-    // Auth Buttons
-    document.getElementById("btn-google-login").addEventListener("click", handleGoogleLogin);
-    document.getElementById("btn-logout").addEventListener("click", handleLogout);
 
-    // Tab Buttons
+    // 2. Auth Buttons
+    document.getElementById("btn-google-login")?.addEventListener("click", handleGoogleLogin);
+    document.getElementById("btn-logout")?.addEventListener("click", handleLogout);
+
+    // 3. Vault Buttons
+    document.getElementById("btn-setup")?.addEventListener("click", handleSetupVault);
+    document.getElementById("btn-unlock")?.addEventListener("click", handleUnlockVault);
+    document.getElementById("btn-lock")?.addEventListener("click", handleLockVault);
+
+    // 4. Tab Navigation
     if(tabPasswords) tabPasswords.addEventListener("click", () => switchTab('passwords'));
     if(tabShares) tabShares.addEventListener("click", () => switchTab('shares'));
 });
@@ -27,69 +36,105 @@ function switchTab(tab) {
     if (tab === 'passwords') {
         passwordList.style.display = 'block';
         shareList.style.display = 'none';
+        
         tabPasswords.style.fontWeight = 'bold';
         tabPasswords.style.color = '#153243';
         tabShares.style.fontWeight = 'normal';
         tabShares.style.color = '#888';
-        loadCredentials(); 
+        
+        loadCredentials(); // Reload passwords
     } else {
         passwordList.style.display = 'none';
         shareList.style.display = 'block';
+        
         tabShares.style.fontWeight = 'bold';
         tabShares.style.color = '#153243';
         tabPasswords.style.fontWeight = 'normal';
         tabPasswords.style.color = '#888';
-        loadActiveShares();
+        
+        loadActiveShares(); // Load shares
     }
 }
 
+// --- CORE FLOW ---
 async function checkUser() {
+    // 1. Check Supabase Session
     const { data: { session } } = await supabaseClient.auth.getSession();
-    if (session) {
-        showApp();
-        loadCredentials();
-    } else {
-        showAuth();
+    if (!session) {
+        showSection("auth");
+        return;
+    }
+
+    // 2. Check if Vault is Set Up or Locked (via Background)
+    const vaultStatus = await chrome.runtime.sendMessage({ type: "CHECK_VAULT_STATUS" });
+    
+    if (vaultStatus.status === "setup_needed") {
+        showSection("setup");
+    } else if (vaultStatus.status === "locked") {
+        showSection("unlock");
+    } else if (vaultStatus.status === "unlocked") {
+        showSection("app");
+        loadCredentials(); // Default load
     }
 }
 
-// --- 1. LOAD PASSWORDS ---
+// --- VAULT HANDLERS ---
+async function handleSetupVault() {
+    const pass = document.getElementById("setup-pass").value;
+    if (!pass) return alert("Please enter a master password");
+    
+    const res = await chrome.runtime.sendMessage({ type: "SETUP_VAULT", password: pass });
+    if (res.success) checkUser();
+}
+
+async function handleUnlockVault() {
+    const pass = document.getElementById("unlock-pass").value;
+    if (!pass) return;
+
+    const res = await chrome.runtime.sendMessage({ type: "UNLOCK_VAULT", password: pass });
+    if (res.success) {
+        document.getElementById("unlock-error").innerText = "";
+        checkUser();
+    } else {
+        document.getElementById("unlock-error").innerText = "Incorrect password";
+    }
+}
+
+async function handleLockVault() {
+    await chrome.runtime.sendMessage({ type: "LOCK_VAULT" });
+    checkUser();
+}
+
+// --- APP LOGIC: LOAD PASSWORDS ---
 async function loadCredentials() {
-    passwordList.innerHTML = "Loading...";
+    passwordList.innerHTML = "<div style='padding:10px; text-align:center;'>Loading...</div>";
 
-    const { data: credentials, error } = await supabaseClient.rpc("get_credentials");
-
-    if (error) {
-        console.error("Error loading credentials:", error);
-        passwordList.innerHTML = `<div style="color:red; text-align:center;">Error loading data.</div>`;
-        return;
-    }
-
+    // Request Decrypted Credentials from Background
+    const response = await chrome.runtime.sendMessage({ type: "GET_DECRYPTED_CREDENTIALS" });
+    
     passwordList.innerHTML = "";
-
-    if (!credentials || credentials.length === 0) {
-        passwordList.innerHTML = "<i style='text-align:center; display:block; margin-top:20px; color:#888;'>No credentials saved yet.</i>";
+    if (!response.success || !response.data || response.data.length === 0) {
+        passwordList.innerHTML = "<div style='padding:20px; text-align:center; color:#888;'>No passwords saved yet.</div>";
         return;
     }
 
-    credentials.forEach((item) => {
+    response.data.forEach((item) => {
         const div = document.createElement("div");
         div.className = "bookmark";
-
+        
         const faviconUrl = `https://www.google.com/s2/favicons?domain=${item.site}&sz=64`;
-        const accentColor = item.color && item.color !== "" ? item.color : "#ddd"; 
-
+        const accentColor = item.color || "#ddd"; 
         div.style.borderLeft = `5px solid ${accentColor}`;
 
         div.innerHTML = `
-            <div class="bm-info" style="display:flex; align-items:center; gap:12px; flex-grow:1;">
+            <div class="bm-info" style="display:flex; align-items:center; gap:12px; flex-grow:1; cursor:pointer;">
                 <img src="${faviconUrl}" style="width: 32px; height: 32px; border-radius: 4px;" />
                 <div>
-                    <div style="font-weight: bold; font-size: 14px; color: #333;">${item.site || "Unknown Site"}</div>
-                    <div style="font-size: 12px; color: #666;">${item.username || "No Username"}</div>
+                    <div style="font-weight: bold; font-size: 14px; color: #333;">${item.site || "Unknown"}</div>
+                    <div style="font-size: 12px; color: #666;">${item.username || "No User"}</div>
                 </div>
             </div>
-            <button class="btn-share" title="Create Share Link" style="background:none; border:none; cursor:pointer; padding:5px;">
+            <button class="btn-share" title="Share" style="background:none; border:none; cursor:pointer; padding:8px;">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="18" cy="5" r="3"></circle>
                     <circle cx="6" cy="12" r="3"></circle>
@@ -100,54 +145,29 @@ async function loadCredentials() {
             </button>
         `;
 
-        // Fill Credentials Handler
+        // 1. CLICK INFO -> FILL
         div.querySelector(".bm-info").addEventListener("click", async () => {
-            try {
-                let targetTabId = null;
-                const storage = await chrome.storage.local.get(['target_tab_id']);
-                
-                if (storage.target_tab_id) {
-                    targetTabId = storage.target_tab_id;
-                    await chrome.storage.local.remove(['target_tab_id']);
-                    setTimeout(() => window.close(), 100); 
-                } else {
-                    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-                    targetTabId = tab?.id;
-                }
-
-                if (targetTabId) {
-                    await chrome.tabs.sendMessage(targetTabId, {
-                        type: "FILL_CREDENTIALS",
-                        data: {
-                            username: item.username,
-                            password: item.password,
-                        },
-                    });
-                }
-            } catch (err) {
-                console.error("Failed to send credentials:", err);
-            }
+             fillCredential(item);
         });
 
-        // Share Handler
+        // 2. CLICK SHARE -> CREATE LINK
         div.querySelector(".btn-share").addEventListener("click", async (e) => {
             e.stopPropagation();
-            
             const btn = e.currentTarget;
             const originalHtml = btn.innerHTML;
             btn.innerHTML = "..."; 
 
-            // Call CREATE_SHARE (inserts to DB)
-            const response = await chrome.runtime.sendMessage({ 
+            const res = await chrome.runtime.sendMessage({ 
                 type: "CREATE_SHARE", 
                 data: item 
             });
 
-            if (response && response.success) {
-                await navigator.clipboard.writeText(response.link);
+            if (res && res.success) {
+                await navigator.clipboard.writeText(res.link);
                 btn.innerHTML = `<span style="color:green; font-weight:bold;">✔</span>`; 
             } else {
-                alert("Error: " + response.error);
+                alert("Error: " + (res.error || "Unknown error"));
+                btn.innerHTML = originalHtml;
             }
             setTimeout(() => btn.innerHTML = originalHtml, 2000);
         });
@@ -156,14 +176,14 @@ async function loadCredentials() {
     });
 }
 
-// --- 2. LOAD ACTIVE SHARES ---
+// --- APP LOGIC: LOAD SHARES ---
 async function loadActiveShares() {
-    shareList.innerHTML = "Loading...";
+    shareList.innerHTML = "<div style='padding:10px; text-align:center;'>Loading...</div>";
     const response = await chrome.runtime.sendMessage({ type: "GET_MY_SHARES" });
 
     shareList.innerHTML = "";
     if (!response.success || !response.data || response.data.length === 0) {
-        shareList.innerHTML = "<div style='text-align:center; color:#888; margin-top:20px;'>No active shared links.</div>";
+        shareList.innerHTML = "<div style='padding:20px; text-align:center; color:#888;'>No active shared links.</div>";
         return;
     }
 
@@ -171,19 +191,19 @@ async function loadActiveShares() {
         const div = document.createElement("div");
         div.className = "bookmark";
         div.style.justifyContent = "space-between";
+        div.style.cursor = "default";
 
-        // Count how many people have access
         const accessCount = share.shared_to ? share.shared_to.length : 0;
 
         div.innerHTML = `
             <div>
                 <div style="font-weight:bold; color:#333;">${share.site || "Unknown"}</div>
-                <div style="font-size:12px; color:#666;">${share.username || "No user"}</div>
-                <div style="font-size:10px; color:#999; margin-top:2px;">
+                <div style="font-size:12px; color:#666;">${share.username || "No User"}</div>
+                <div style="font-size:11px; color:#999; margin-top:2px;">
                     Accessed by: <b>${accessCount}</b> users
                 </div>
             </div>
-            <button class="btn-revoke" style="background:none; border:none; cursor:pointer; color:red;" title="Revoke Access (Delete Link)">
+            <button class="btn-revoke" title="Revoke (Delete)" style="background:none; border:none; cursor:pointer; color:red; padding:8px;">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="3 6 5 6 21 6"></polyline>
                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -191,17 +211,16 @@ async function loadActiveShares() {
             </button>
         `;
 
+        // REVOKE
         div.querySelector(".btn-revoke").addEventListener("click", async () => {
-            if(confirm("Revoke this link? No one will be able to use it anymore.")) {
+            if(confirm("Revoke this link? This action cannot be undone.")) {
                 div.style.opacity = "0.5";
                 const res = await chrome.runtime.sendMessage({ type: "REVOKE_SHARE", id: share.id });
                 if (res.success) {
                     div.remove();
-                    if(shareList.children.length === 0) {
-                         shareList.innerHTML = "<div style='text-align:center; color:#888; margin-top:20px;'>No active shared links.</div>";
-                    }
+                    if(shareList.children.length === 0) shareList.innerHTML = "<div style='padding:20px; text-align:center; color:#888;'>No active shared links.</div>";
                 } else {
-                    alert("Failed to revoke");
+                    alert("Failed to revoke: " + res.error);
                     div.style.opacity = "1";
                 }
             }
@@ -211,7 +230,46 @@ async function loadActiveShares() {
     });
 }
 
-// --- AUTH LOGIC ---
+// --- HELPER: FILL CREDENTIAL ---
+async function fillCredential(item) {
+    try {
+        let targetTabId = null;
+        const storage = await chrome.storage.local.get(['target_tab_id']);
+        
+        if (storage.target_tab_id) {
+            targetTabId = storage.target_tab_id;
+            await chrome.storage.local.remove(['target_tab_id']);
+            setTimeout(() => window.close(), 100); 
+        } else {
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            targetTabId = tab?.id;
+        }
+
+        if (targetTabId) {
+            await chrome.tabs.sendMessage(targetTabId, {
+                type: "FILL_CREDENTIALS",
+                data: {
+                    username: item.username,
+                    password: item.password, // This is Plaintext (decrypted by background before sending here)
+                },
+            });
+        }
+    } catch (err) {
+        console.error("Fill Error:", err);
+    }
+}
+
+// --- HELPERS: SHOW SECTION ---
+function showSection(name) {
+    [authSection, appSection, setupSection, unlockSection].forEach(el => el.style.display = "none");
+    
+    if (name === "auth") authSection.style.display = "block";
+    if (name === "app") appSection.style.display = "flex"; // Flex for column layout
+    if (name === "setup") setupSection.style.display = "block";
+    if (name === "unlock") unlockSection.style.display = "block";
+}
+
+// --- AUTH HANDLERS ---
 async function handleGoogleLogin() {
     msgDiv.innerText = "Launching Google Login...";
     const { data, error } = await supabaseClient.auth.signInWithOAuth({
@@ -260,14 +318,6 @@ async function handleGoogleLogin() {
 
 async function handleLogout() {
     await supabaseClient.auth.signOut();
+    await chrome.runtime.sendMessage({ type: "LOCK_VAULT" }); // Lock on logout
     checkUser();
-}
-
-function showApp() {
-    authSection.style.display = "none";
-    appSection.style.display = "flex"; // Changed to flex for proper layout
-}
-function showAuth() {
-    authSection.style.display = "block";
-    appSection.style.display = "none";
 }
