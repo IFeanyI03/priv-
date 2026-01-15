@@ -8,14 +8,11 @@ import {
     base64ToArrayBuffer 
 } from "./lib/crypto.js";
 
-// --- GLOBAL STATE (In-Memory) ---
-// This key disappears when Chrome closes (Auto-Lock)
+// --- GLOBAL STATE ---
 let sessionKey = null; 
 
-// --- 1. MESSAGE ROUTER ---
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    
-    // A. VAULT MANAGEMENT
+    // --- VAULT & AUTH ---
     if (message.type === "CHECK_VAULT_STATUS") {
         checkVaultStatus().then(sendResponse);
         return true; 
@@ -31,22 +28,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     else if (message.type === "LOCK_VAULT") {
         sessionKey = null;
         sendResponse({ success: true });
+        return true;
     }
 
-    // B. CREDENTIALS (APP)
+    // --- CREDENTIALS ---
     else if (message.type === "GET_DECRYPTED_CREDENTIALS") {
         getDecryptedCredentials().then(sendResponse);
         return true;
     }
     else if (message.type === "SAVE_PASSWORD") {
-        handleSavePassword(message.data).then(() => sendResponse({ success: true }));
+        handleSavePassword(message.data).then(res => sendResponse(res));
         return true;
     }
+    
+    // --- POPUP & TABS ---
     else if (message.type === "OPEN_POPUP") {
-        handleOpenPopup(sender?.tab?.id);
+        if (sender.tab?.id) {
+            chrome.storage.local.set({ 'target_tab_id': sender.tab.id });
+        }
+        chrome.windows.create({
+            url: "popup.html", type: "popup", width: 360, height: 600, focused: true 
+        });
     }
 
-    // C. SHARING FEATURES
+    // --- SHARING ---
     else if (message.type === "CREATE_SHARE") {
         createShare(message.data).then(sendResponse);
         return true;
@@ -66,39 +71,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // ==========================================
-//  SECTION A: VAULT LOGIC
+//  SECTION A: VAULT SECURITY (FIXED)
 // ==========================================
 
 async function checkVaultStatus() {
-    // 1. Check if "vault_salt" exists in storage. 
-    // If not, the user hasn't set up the extension yet.
-    const storage = await chrome.storage.local.get(["vault_salt"]);
-    
-    if (!storage.vault_salt) {
-        return { status: "setup_needed" };
-    }
-    
-    // 2. If salt exists, but we have no sessionKey, it's Locked.
-    if (!sessionKey) {
-        return { status: "locked" };
-    }
-    
-    // 3. Otherwise, it's Unlocked.
+    const storage = await chrome.storage.local.get(["vault_salt", "vault_validator"]);
+    if (!storage.vault_salt || !storage.vault_validator) return { status: "setup_needed" };
+    if (!sessionKey) return { status: "locked" };
     return { status: "unlocked" };
 }
 
 async function setupVault(masterPassword) {
     try {
         const salt = generateSalt();
-        // Derive key to verify it works (and usually we'd encrypt a 'test' phrase)
-        // For simplicity, we just save the salt.
-        // In a real app, you might encrypt the Supabase Session token here too.
+        const key = await deriveKey(masterPassword, salt);
+
+        // --- FIX 1: Create a Validation Token ---
+        // We encrypt the word "VALID". Later, we try to decrypt it.
+        // If decryption fails, we know the password is wrong.
+        const validationToken = await encryptData("VALID", key);
         
         const saltBase64 = arrayBufferToBase64(salt.buffer);
-        await chrome.storage.local.set({ vault_salt: saltBase64 });
         
-        // Auto-unlock
-        sessionKey = await deriveKey(masterPassword, salt);
+        await chrome.storage.local.set({ 
+            vault_salt: saltBase64,
+            vault_validator: validationToken 
+        });
+        
+        sessionKey = key;
         return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
@@ -107,88 +107,95 @@ async function setupVault(masterPassword) {
 
 async function unlockVault(masterPassword) {
     try {
-        const { vault_salt } = await chrome.storage.local.get(["vault_salt"]);
-        if (!vault_salt) return { success: false, error: "No vault found" };
+        const { vault_salt, vault_validator } = await chrome.storage.local.get(["vault_salt", "vault_validator"]);
+        if (!vault_salt || !vault_validator) return { success: false, error: "No vault found" };
 
         const salt = base64ToArrayBuffer(vault_salt);
         const key = await deriveKey(masterPassword, salt);
         
-        // Ideally, verify the key against a stored hash (checksum). 
-        // Here we assume success if no error is thrown during derivation.
+        // --- FIX 1 (Cont): Verify the Password ---
+        try {
+            const check = await decryptData(vault_validator, key);
+            if (check !== "VALID") throw new Error("Invalid password");
+        } catch (e) {
+            // Decryption failed means the key (and thus the password) is wrong
+            return { success: false, error: "Incorrect password" };
+        }
+
         sessionKey = key; 
         return { success: true };
     } catch (err) {
-        return { success: false, error: "Invalid password" };
+        return { success: false, error: "Unlock failed" };
     }
 }
+
+// ==========================================
+//  SECTION B: DATA HANDLING (FIXED)
+// ==========================================
 
 async function getDecryptedCredentials() {
     if (!sessionKey) return { success: false, error: "Vault locked" };
 
     const { data: credentials, error } = await supabaseClient.rpc("get_credentials");
-    if (error || !credentials) return { success: false, data: [] };
+    if (error) return { success: false, error: error.message };
 
-    // Decrypt each password
+    // --- FIX 2: Decrypt passwords before sending to Popup ---
     const decryptedList = await Promise.all(credentials.map(async (item) => {
         try {
-            // Note: In "handleSavePassword" below, we are NOT encrypting with Master Password yet
-            // to keep this compatible with your previous code. 
-            // If you want full encryption, you must update handleSavePassword to use 'sessionKey' too.
-            // For now, we assume stored passwords are essentially accessible or using Supabase RLS.
-            
-            // IF you were encrypting with sessionKey, you would do:
-            // const plainPass = await decryptData(item.password, sessionKey);
-            
-            return { ...item }; // Returning as-is based on your current DB structure
+            // Try to decrypt. If it fails (e.g. old plaintext data), return as is or mark error
+            const plainPass = await decryptData(item.password, sessionKey);
+            return { ...item, password: plainPass };
         } catch (e) {
-            return { ...item, password: "(Decryption Failed)" };
+            // Fallback for legacy/plaintext data if you have any
+            return { ...item }; 
         }
     }));
 
     return { success: true, data: decryptedList };
 }
 
-// ==========================================
-//  SECTION B: SAVING & POPUP
-// ==========================================
-
 async function handleSavePassword(data) {
-    const { data: { user } } = await supabaseClient.auth.getUser();
-    if (!user) return;
+    if (!sessionKey) return { success: false, error: "Vault is locked" };
 
-    // TODO: Ideally, encrypt 'data.password' with 'sessionKey' here before sending to Supabase
-    // const encryptedPass = await encryptData(data.password, sessionKey);
+    const { data: { user } } = await supabaseClient.auth.getUser();
+    if (!user) return { success: false, error: "Not logged in" };
+
+    // --- FIX 3: Check for Duplicates ---
+    // Prevent saving if (site + username) already exists for this user
+    const { data: existing } = await supabaseClient
+        .from('credentials')
+        .select('id')
+        .eq('site', data.site)
+        .eq('username', data.username)
+        .eq('user_id', user.id); // Ensure we only check current user's vault
+
+    if (existing && existing.length > 0) {
+        return { success: false, error: "Credential already exists in your vault." };
+    }
+
+    // --- FIX 2 (Cont): Encrypt before saving ---
+    const encryptedPass = await encryptData(data.password, sessionKey);
 
     const { data: savedData, error } = await supabaseClient.rpc(
         "insert_credential",
         {
             p_site: data.site,
             p_username: data.username,
-            p_password: data.password, // Storing plain/server-side encrypted for now
+            p_password: encryptedPass, // Send ENCRYPTED string
             p_color: data.color || "",
             p_logo: data.icon || "", 
         }
     );
     
-    if (error) console.error("Supabase Error:", error);
-    else console.log("Saved:", savedData);
-}
-
-function handleOpenPopup(tabId) {
-    if (tabId) {
-        chrome.storage.local.set({ 'target_tab_id': tabId });
+    if (error) {
+        console.error("Supabase Error:", error);
+        return { success: false, error: error.message };
     }
-    chrome.windows.create({
-        url: "popup.html",
-        type: "popup",
-        width: 360,
-        height: 600,
-        focused: true 
-    });
+    return { success: true, data: savedData };
 }
 
 // ==========================================
-//  SECTION C: SHARING LOGIC
+//  SECTION C: SHARING (FIXED)
 // ==========================================
 
 async function createShare(item) {
@@ -200,10 +207,12 @@ async function createShare(item) {
         const salt = generateSalt();
         const key = await deriveKey(linkPassword, salt);
         
+        // We share the PLAINTEXT password inside the encrypted bundle
+        // (The receiver will re-encrypt it with THEIR master password upon saving)
         const payload = JSON.stringify({
             s: item.site,
             u: item.username,
-            p: item.password, 
+            p: item.password, // 'item.password' here is already decrypted by getDecryptedCredentials
             c: item.color,
             i: item.logo || ""
         });
@@ -228,7 +237,6 @@ async function createShare(item) {
         const shareUrl = `https://example.com/#share_id=${data.id}&key=${linkPassword}`;
         return { success: true, link: shareUrl };
     } catch (err) {
-        console.error("Share Error:", err);
         return { success: false, error: err.message };
     }
 }
@@ -257,6 +265,7 @@ async function revokeShare(shareId) {
 async function resolveSharedLink(shareId, linkPassword) {
     try {
         const { data: { user } } = await supabaseClient.auth.getUser();
+        
         const { data, error } = await supabaseClient
             .from('credential_shares')
             .select('*')
@@ -271,6 +280,7 @@ async function resolveSharedLink(shareId, linkPassword) {
         
         if (!jsonString) throw new Error("Decryption failed");
 
+        // Update Access List
         if (user && !data.shared_to.includes(user.id)) {
             const updatedList = [...data.shared_to, user.id];
             supabaseClient
@@ -282,6 +292,6 @@ async function resolveSharedLink(shareId, linkPassword) {
 
         return { success: true, data: JSON.parse(jsonString) };
     } catch (err) {
-        return { success: false, error: "Invalid Key" };
+        return { success: false, error: "Invalid Key or Data" };
     }
 }
