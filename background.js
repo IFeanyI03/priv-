@@ -71,6 +71,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 });
 
+// --- OPTIONAL: Handle Icon Click if 'default_popup' is removed from manifest ---
+chrome.action.onClicked.addListener((tab) => {
+    // If you prefer a detached window over the bubble, remove "default_popup" from manifest
+    // and this code will run instead.
+    chrome.windows.create({ url: "popup.html", type: "popup", width: 360, height: 600, focused: true });
+});
+
+
 // ==========================================
 //  VAULT HELPERS
 // ==========================================
@@ -138,13 +146,12 @@ async function getDecryptedCredentials() {
                 const plain = await decryptData(item.password, sessionKey);
                 allCredentials.push({ ...item, password: plain, is_shared: false });
             } catch (e) { 
-                // Ignore old bad data, just skip it
                 console.warn("Skipping item (bad key):", item.site);
             }
         }
     }
 
-    // 2. Fetch SHARED (Using fixed RPC)
+    // 2. Fetch SHARED (Using RPC)
     const { data: shared, error: err2 } = await supabaseClient.rpc("get_shared_items_for_user", { 
         my_user_id: user.id 
     });
@@ -232,7 +239,6 @@ async function createShare(item) {
         const salt = generateSalt();
         const key = await deriveKey(linkPassword, salt);
         
-        // Only share what's needed for the preview
         const payload = JSON.stringify({
             s: item.site, u: item.username, p: item.password, c: item.color, i: item.logo || ""
         });
@@ -264,10 +270,14 @@ async function getMyShares() {
     const { data: { user } } = await supabaseClient.auth.getUser();
     if (!user) return { success: false };
 
-    // Fetch shares with JOIN to credentials to get Site/Username
+    // --- UPDATED JOIN ---
+    // Now fetching logo and color as well
     const { data, error } = await supabaseClient
         .from('credential_shares')
-        .select(`*, credentials ( site, username )`)
+        .select(`
+            *,
+            credentials ( site, username, logo, color )
+        `)
         .eq('share_by', user.id)
         .order('created_at', { ascending: false });
 
@@ -275,7 +285,9 @@ async function getMyShares() {
     const flattened = data ? data.map(item => ({
         ...item,
         site: item.credentials?.site || "Unknown",
-        username: item.credentials?.username || "Unknown"
+        username: item.credentials?.username || "Unknown",
+        logo: item.credentials?.logo || "",
+        color: item.credentials?.color || ""
     })) : [];
 
     return { success: !error, data: flattened };
@@ -288,7 +300,6 @@ async function revokeShare(id) {
 
 async function resolveSharedLink(shareId, linkPassword) {
     try {
-        // Fetch share + join credentials for the Preview Alert
         const { data, error } = await supabaseClient
             .from('credential_shares')
             .select(`*, credentials(site, username)`)
@@ -306,7 +317,7 @@ async function resolveSharedLink(shareId, linkPassword) {
             success: true, 
             data: { 
                 ...decrypted,
-                s: data.credentials?.site || decrypted.s, // Prefer DB site name
+                s: data.credentials?.site || decrypted.s, 
                 u: data.credentials?.username || decrypted.u 
             } 
         };

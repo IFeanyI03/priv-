@@ -131,6 +131,7 @@ async function loadCredentials() {
     renderList(sharedItems, "Shared With Me", true);
 }
 
+// --- UPDATED UI FOR ACTIVE SHARES ---
 async function loadActiveShares() {
     shareList.innerHTML = "<div style='padding:10px; text-align:center;'>Loading...</div>";
     const response = await chrome.runtime.sendMessage({ type: "GET_MY_SHARES" });
@@ -145,30 +146,49 @@ async function loadActiveShares() {
         const div = document.createElement("div");
         div.className = "bookmark";
         div.style.justifyContent = "space-between";
+        div.style.alignItems = "center";
         
         const count = share.shared_to ? share.shared_to.length : 0;
         const siteName = share.site || "Unknown";
         const userName = share.username || "Unknown";
-        const favicon = `https://www.google.com/s2/favicons?domain=${siteName}&sz=64`;
+        
+        // Use custom logo if available, else Google favicon
+        const favicon = share.logo || `https://www.google.com/s2/favicons?domain=${siteName}&sz=64`;
+        
+        // Use custom color if available, else default
+        const accentColor = share.color || "#153243";
+        div.style.borderLeft = `4px solid ${accentColor}`;
 
         div.innerHTML = `
-            <div style="display:flex; align-items:center; gap:10px;">
-                <img src="${favicon}" style="width: 24px; height: 24px; border-radius: 4px;" />
+            <div style="display:flex; align-items:center; gap:12px;">
+                <img src="${favicon}" style="width: 32px; height: 32px; border-radius: 4px;" />
                 <div>
-                    <div style="font-weight:bold; color:#333; font-size:13px;">${siteName}</div>
-                    <div style="font-size:11px; color:#666;">${userName}</div>
-                    <div style="font-size:10px; color:#999;">Accessed by: ${count}</div>
+                    <div style="font-weight:bold; color:#333; font-size:14px;">${siteName}</div>
+                    <div style="font-size:12px; color:#666;">${userName}</div>
+                    <div style="display:flex; align-items:center; gap:4px; margin-top:3px;">
+                        <span style="font-size:10px; color:#555; background:#eee; padding:2px 6px; border-radius:10px;">
+                            👥 Shared with <b>${count}</b> people
+                        </span>
+                    </div>
                 </div>
             </div>
-            <button class="btn-revoke" style="background:none; border:none; cursor:pointer; color:red; padding:5px;">🗑️</button>
+            <button class="btn-revoke" style="background:none; border:none; cursor:pointer; color:red; padding:8px; opacity:0.7; transition:0.2s;" title="Revoke Access">
+                🗑️
+            </button>
         `;
         
         div.querySelector(".btn-revoke").addEventListener("click", async () => {
-            if(confirm("Revoke this link?")) {
+            if(confirm("Are you sure? Revoking this link will remove access for everyone immediately.")) {
                 const res = await chrome.runtime.sendMessage({ type: "REVOKE_SHARE", id: share.id });
                 if (res.success) loadActiveShares();
             }
         });
+        
+        // Hover effect for delete button
+        const btnRevoke = div.querySelector(".btn-revoke");
+        btnRevoke.onmouseover = () => btnRevoke.style.opacity = "1";
+        btnRevoke.onmouseout = () => btnRevoke.style.opacity = "0.7";
+
         shareList.appendChild(div);
     });
 }
