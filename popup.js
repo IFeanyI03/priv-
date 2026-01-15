@@ -106,10 +106,10 @@ async function handleLockVault() {
 }
 
 // --- APP LOGIC: LOAD PASSWORDS ---
+// --- 1. MAIN TAB: SPLIT VIEW (My Vault vs. Shared) ---
 async function loadCredentials() {
     passwordList.innerHTML = "<div style='padding:10px; text-align:center;'>Loading...</div>";
 
-    // Request Decrypted Credentials from Background
     const response = await chrome.runtime.sendMessage({ type: "GET_DECRYPTED_CREDENTIALS" });
     
     passwordList.innerHTML = "";
@@ -118,65 +118,79 @@ async function loadCredentials() {
         return;
     }
 
-    response.data.forEach((item) => {
-        const div = document.createElement("div");
-        div.className = "bookmark";
-        
-        const faviconUrl = `https://www.google.com/s2/favicons?domain=${item.site}&sz=64`;
-        const accentColor = item.color || "#ddd"; 
-        div.style.borderLeft = `5px solid ${accentColor}`;
+    // Separate the items
+    const myItems = response.data.filter(item => !item.is_shared);
+    const sharedItems = response.data.filter(item => item.is_shared);
 
-        div.innerHTML = `
-            <div class="bm-info" style="display:flex; align-items:center; gap:12px; flex-grow:1; cursor:pointer;">
-                <img src="${faviconUrl}" style="width: 32px; height: 32px; border-radius: 4px;" />
-                <div>
-                    <div style="font-weight: bold; font-size: 14px; color: #333;">${item.site || "Unknown"}</div>
-                    <div style="font-size: 12px; color: #666;">${item.username || "No User"}</div>
+    // Helper to render a list
+    const renderList = (items, title, isSharedSection) => {
+        if (items.length === 0) return;
+
+        // Add Section Header
+        const header = document.createElement("div");
+        header.style.cssText = "font-size: 12px; font-weight: bold; color: #888; margin: 15px 0 5px 0; text-transform: uppercase; letter-spacing: 0.5px;";
+        header.innerText = title;
+        passwordList.appendChild(header);
+
+        items.forEach((item) => {
+            const div = document.createElement("div");
+            div.className = "bookmark";
+            
+            const faviconUrl = `https://www.google.com/s2/favicons?domain=${item.site}&sz=64`;
+            // Use Orange for shared items, standard logic for others
+            const accentColor = isSharedSection ? "#ff9800" : (item.color || "#ddd"); 
+            
+            div.style.borderLeft = `5px solid ${accentColor}`;
+
+            div.innerHTML = `
+                <div class="bm-info" style="display:flex; align-items:center; gap:12px; flex-grow:1; cursor:pointer;">
+                    <img src="${faviconUrl}" style="width: 32px; height: 32px; border-radius: 4px;" />
+                    <div>
+                        <div style="font-weight: bold; font-size: 14px; color: #333;">${item.site || "Unknown"}</div>
+                        <div style="font-size: 12px; color: #666;">${item.username || "No User"}</div>
+                    </div>
                 </div>
-            </div>
-            <button class="btn-share" title="Share" style="background:none; border:none; cursor:pointer; padding:8px;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="18" cy="5" r="3"></circle>
-                    <circle cx="6" cy="12" r="3"></circle>
-                    <circle cx="18" cy="19" r="3"></circle>
-                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
-                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
-                </svg>
-            </button>
-        `;
+                ${!isSharedSection ? `
+                <button class="btn-share" title="Share" style="background:none; border:none; cursor:pointer; padding:8px;">
+                    <img src="./assets/share-icon.svg" width="18" height="18" onerror="this.style.display='none'" />
+                    <span style="font-size:18px;">🔗</span> 
+                </button>` : `<span style="font-size:10px; color:#ff9800; border:1px solid #ff9800; padding:2px 4px; border-radius:4px;">SHARED</span>`}
+            `;
 
-        // 1. CLICK INFO -> FILL
-        div.querySelector(".bm-info").addEventListener("click", async () => {
-             fillCredential(item);
-        });
+            // Click to Fill
+            div.querySelector(".bm-info").addEventListener("click", async () => fillCredential(item));
 
-        // 2. CLICK SHARE -> CREATE LINK
-        div.querySelector(".btn-share").addEventListener("click", async (e) => {
-            e.stopPropagation();
-            const btn = e.currentTarget;
-            const originalHtml = btn.innerHTML;
-            btn.innerHTML = "..."; 
+            // Share Button (Only for My Credentials)
+            if (!isSharedSection) {
+                div.querySelector(".btn-share").addEventListener("click", async (e) => {
+                    e.stopPropagation();
+                    const btn = e.currentTarget;
+                    const originalHtml = btn.innerHTML;
+                    btn.innerHTML = "⏳"; 
 
-            const res = await chrome.runtime.sendMessage({ 
-                type: "CREATE_SHARE", 
-                data: item 
-            });
+                    const res = await chrome.runtime.sendMessage({ type: "CREATE_SHARE", data: item });
 
-            if (res && res.success) {
-                await navigator.clipboard.writeText(res.link);
-                btn.innerHTML = `<span style="color:green; font-weight:bold;">✔</span>`; 
-            } else {
-                alert("Error: " + (res.error || "Unknown error"));
-                btn.innerHTML = originalHtml;
+                    if (res && res.success) {
+                        await navigator.clipboard.writeText(res.link);
+                        btn.innerHTML = "✔"; 
+                    } else {
+                        alert("Error: " + (res.error || "Unknown error"));
+                        btn.innerHTML = originalHtml;
+                    }
+                    setTimeout(() => btn.innerHTML = originalHtml, 2000);
+                });
             }
-            setTimeout(() => btn.innerHTML = originalHtml, 2000);
-        });
 
-        passwordList.appendChild(div);
-    });
+            passwordList.appendChild(div);
+        });
+    };
+
+    // Render Lists
+    renderList(myItems, "My Credentials", false);
+    renderList(sharedItems, "Shared With Me", true);
 }
 
-// --- APP LOGIC: LOAD SHARES ---
+// --- 2. SHARED LINKS TAB: FIX "UNKNOWN" ---
 async function loadActiveShares() {
     shareList.innerHTML = "<div style='padding:10px; text-align:center;'>Loading...</div>";
     const response = await chrome.runtime.sendMessage({ type: "GET_MY_SHARES" });
@@ -194,24 +208,24 @@ async function loadActiveShares() {
         div.style.cursor = "default";
 
         const accessCount = share.shared_to ? share.shared_to.length : 0;
+        const faviconUrl = `https://www.google.com/s2/favicons?domain=${share.site}&sz=64`;
 
         div.innerHTML = `
-            <div>
-                <div style="font-weight:bold; color:#333;">${share.site || "Unknown"}</div>
-                <div style="font-size:12px; color:#666;">${share.username || "No User"}</div>
-                <div style="font-size:11px; color:#999; margin-top:2px;">
-                    Accessed by: <b>${accessCount}</b> users
+            <div style="display:flex; align-items:center; gap:10px;">
+                <img src="${faviconUrl}" style="width: 24px; height: 24px; border-radius: 4px;" />
+                <div>
+                    <div style="font-weight:bold; color:#333; font-size:13px;">${share.site || "Unknown Site"}</div>
+                    <div style="font-size:11px; color:#666;">${share.username || "No User"}</div>
+                    <div style="font-size:10px; color:#999; margin-top:2px;">
+                        Accessed by: <b>${accessCount}</b> users
+                    </div>
                 </div>
             </div>
             <button class="btn-revoke" title="Revoke (Delete)" style="background:none; border:none; cursor:pointer; color:red; padding:8px;">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="3 6 5 6 21 6"></polyline>
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                </svg>
+                🗑️
             </button>
         `;
 
-        // REVOKE
         div.querySelector(".btn-revoke").addEventListener("click", async () => {
             if(confirm("Revoke this link? This action cannot be undone.")) {
                 div.style.opacity = "0.5";

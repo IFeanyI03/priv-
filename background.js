@@ -249,16 +249,17 @@ async function saveShareAccess(data) {
 // ==========================================
 
 async function createShare(item) {
-    // Logic unchanged from previous "Correct" version
-    // ... (Keep your createShare logic) ...
     try {
         const { data: { user } } = await supabaseClient.auth.getUser();
+        if (!user) return { success: false, error: "Not logged in" };
+
         const linkPassword = crypto.randomUUID(); 
         const salt = generateSalt();
         const key = await deriveKey(linkPassword, salt);
         
         const payload = JSON.stringify({
-            s: item.site, u: item.username, p: item.password, c: item.color, i: item.logo || ""
+            s: item.site, u: item.username, p: item.password, 
+            c: item.color, i: item.logo || ""
         });
         
         const encryptedData = await encryptData(payload, key);
@@ -270,23 +271,41 @@ async function createShare(item) {
                 credential_id: item.id,
                 share_by: user.id,
                 shared_to: [],
-                recipient_metadata: {}, // Start empty
+                recipient_metadata: {},
                 encrypted_data: encryptedData,
-                salt: saltBase64
+                salt: saltBase64,
+                // --- ADDED THESE LINES ---
+                site: item.site,       
+                username: item.username 
+                // -------------------------
             })
-            .select().single();
+            .select()
+            .single();
 
         if (error) throw error;
         return { success: true, link: `https://example.com/#share_id=${data.id}&key=${linkPassword}` };
-    } catch (err) { return { success: false, error: err.message }; }
+    } catch (err) {
+        console.error("Share Error:", err);
+        return { success: false, error: err.message };
+    }
 }
 
+// 2. UPDATED: Join with the credentials table to ensure we have data
 async function getMyShares() {
-    // Logic unchanged
     const { data: { user } } = await supabaseClient.auth.getUser();
-    if(!user) return { success: false };
-    const { data, error } = await supabaseClient.from('credential_shares').select('*')
-        .eq('share_by', user.id).order('created_at', {ascending:false});
+    if (!user) return { success: false };
+
+    // We fetch the share info. 
+    // Since we now save 'site' and 'username' in createShare, select('*') is sufficient.
+    // If you want to be extra safe and fetch from the original credential as backup:
+    // .select('*, credentials(site, username, logo, color)')
+    
+    const { data, error } = await supabaseClient
+        .from('credential_shares')
+        .select('*') 
+        .eq('share_by', user.id)
+        .order('created_at', { ascending: false });
+
     return { success: !error, data: data };
 }
 
