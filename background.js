@@ -11,7 +11,7 @@ import {
 let sessionKey = null; 
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    // --- VAULT ---
+    // --- VAULT MANAGEMENT ---
     if (message.type === "CHECK_VAULT_STATUS") {
         checkVaultStatus().then(sendResponse);
         return true; 
@@ -30,7 +30,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     }
 
-    // --- CREDENTIALS (READING) ---
+    // --- DATA FETCHING (MAIN LIST) ---
     else if (message.type === "GET_DECRYPTED_CREDENTIALS") {
         getDecryptedCredentials().then(sendResponse);
         return true;
@@ -41,17 +41,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         handleSavePassword(message.data).then(sendResponse);
         return true;
     }
-    // NEW: Handle Saving a Shared Link (Without touching credentials table)
     else if (message.type === "SAVE_SHARE_ACCESS") {
         saveShareAccess(message.data).then(sendResponse);
         return true;
     }
     
-    // --- OTHERS ---
+    // --- UTILS ---
     else if (message.type === "OPEN_POPUP") {
         if (sender.tab?.id) chrome.storage.local.set({ 'target_tab_id': sender.tab.id });
         chrome.windows.create({ url: "popup.html", type: "popup", width: 360, height: 600, focused: true });
     }
+
+    // --- SHARING ---
     else if (message.type === "CREATE_SHARE") {
         createShare(message.data).then(sendResponse);
         return true;
@@ -70,8 +71,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 });
 
-// ... (Keep verifyVault, setupVault, unlockVault exactly as they were in the previous "FIXED" version) ...
-// ... RE-PASTE THE VAULT LOGIC HERE FOR COMPLETENESS IF NEEDED, OR USE EXISTING ...
+// ==========================================
+//  VAULT HELPERS
+// ==========================================
 
 async function checkVaultStatus() {
     const storage = await chrome.storage.local.get(["vault_salt", "vault_validator"]);
@@ -118,18 +120,17 @@ async function unlockVault(masterPassword) {
 }
 
 // ==========================================
-//  UPDATED DATA FETCHING
+//  CORE: GET CREDENTIALS (PERSONAL + SHARED)
 // ==========================================
 
 async function getDecryptedCredentials() {
     if (!sessionKey) return { success: false, error: "Vault locked" };
-
     const { data: { user } } = await supabaseClient.auth.getUser();
     if (!user) return { success: false, error: "Not logged in" };
 
     const allCredentials = [];
 
-    // 1. Fetch PERSONAL Credentials (from 'credentials' table)
+    // 1. Fetch PERSONAL Credentials
     const { data: personal, error: err1 } = await supabaseClient.rpc("get_credentials");
     if (!err1 && personal) {
         for (const item of personal) {
@@ -140,28 +141,28 @@ async function getDecryptedCredentials() {
         }
     }
 
-    // 2. Fetch SHARED Credentials (from 'credential_shares' table)
-    // We look for rows where 'shared_to' array contains my User ID
-    const { data: shared, error: err2 } = await supabaseClient
-        .from('credential_shares')
-        .select('*')
-        .contains('shared_to', [user.id]);
+    // 2. Fetch SHARED Credentials
+    // Uses the RPC function that joins 'credential_shares' with 'credentials'
+    // to get site/username/logo without storing them redundantly.
+    const { data: shared, error: err2 } = await supabaseClient.rpc("get_shared_items_for_user", { 
+        my_user_id: user.id 
+    });
 
-    if (!err2 && shared) {
+    if (err2) {
+        console.error("Shared Fetch Error:", err2);
+    } else if (shared) {
         for (const item of shared) {
             try {
-                // The encrypted blob for ME is stored in 'recipient_metadata' JSON
-                // format: { "my_user_id": "iv:ciphertext" }
-                const myEncryptedPass = item.recipient_metadata ? item.recipient_metadata[user.id] : null;
-                
-                if (myEncryptedPass) {
-                    const plain = await decryptData(myEncryptedPass, sessionKey);
+                // item.encrypted_blob is the password encrypted with MY key (stored in recipient_metadata)
+                if (item.encrypted_blob) {
+                    const plain = await decryptData(item.encrypted_blob, sessionKey);
                     allCredentials.push({
-                        id: item.id, // share id
-                        site: item.site,
-                        username: item.username,
+                        id: item.share_id,      // Use share_id as the primary reference
+                        site: item.site,        // From Joined Table
+                        username: item.username,// From Joined Table
                         password: plain,
-                        color: "#ff9800", // Orange to indicate shared
+                        color: "#ff9800",       // Shared Indicator Color
+                        logo: item.logo,        // From Joined Table
                         is_shared: true
                     });
                 }
@@ -173,22 +174,22 @@ async function getDecryptedCredentials() {
 }
 
 // ==========================================
-//  UPDATED SAVING LOGIC
+//  CORE: SAVING
 // ==========================================
 
 async function handleSavePassword(data) {
-    // Saves to PERSONAL 'credentials' table (Logic unchanged)
     if (!sessionKey) return { success: false, error: "Vault locked" };
     const { data: { user } } = await supabaseClient.auth.getUser();
     if (!user) return { success: false, error: "Not logged in" };
 
-    // Check duplicates... (existing logic)
+    // Check for duplicates in personal vault
     const { data: existing } = await supabaseClient.from('credentials').select('id')
         .eq('site', data.site).eq('username', data.username).eq('user_id', user.id);
-    if (existing?.length > 0) return { success: false, error: "Duplicate credential." };
+    
+    if (existing && existing.length > 0) return { success: false, error: "Duplicate credential." };
 
     const encryptedPass = await encryptData(data.password, sessionKey);
-    const { data: saved, error } = await supabaseClient.rpc("insert_credential", {
+    const { error } = await supabaseClient.rpc("insert_credential", {
         p_site: data.site, p_username: data.username, p_password: encryptedPass,
         p_color: data.color, p_logo: data.icon
     });
@@ -196,21 +197,15 @@ async function handleSavePassword(data) {
     return { success: !error, error: error?.message };
 }
 
-// ==========================================
-//  NEW: SAVE SHARED ACCESS
-// ==========================================
-
 async function saveShareAccess(data) {
-    // This is called when the user CLICKS "Yes" on a shared link
-    if (!sessionKey) return { success: false, error: "Vault locked. Please unlock extension." };
+    // Saves access to a shared item WITHOUT creating a duplicate row in 'credentials'
+    if (!sessionKey) return { success: false, error: "Vault locked" };
     const { data: { user } } = await supabaseClient.auth.getUser();
     
     try {
-        // 1. Re-encrypt the raw password with MY Vault Key
         const myEncryptedPass = await encryptData(data.password, sessionKey);
-
-        // 2. Prepare the update for 'credential_shares'
-        // We need to fetch the existing metadata first to merge, or use JSONB update logic
+        
+        // 1. Get current metadata
         const { data: currentShare } = await supabaseClient
             .from('credential_shares')
             .select('shared_to, recipient_metadata')
@@ -219,14 +214,16 @@ async function saveShareAccess(data) {
 
         if (!currentShare) throw new Error("Share not found");
 
+        // 2. Append User to Array
         const updatedSharedTo = currentShare.shared_to.includes(user.id) 
             ? currentShare.shared_to 
             : [...currentShare.shared_to, user.id];
             
+        // 3. Add User's Encrypted Password to JSON
         const updatedMetadata = currentShare.recipient_metadata || {};
-        updatedMetadata[user.id] = myEncryptedPass; // Save MY encrypted version
+        updatedMetadata[user.id] = myEncryptedPass;
 
-        // 3. Update the table
+        // 4. Update
         const { error } = await supabaseClient
             .from('credential_shares')
             .update({
@@ -239,24 +236,23 @@ async function saveShareAccess(data) {
         return { success: true };
 
     } catch (err) {
-        console.error("Save Share Error", err);
         return { success: false, error: err.message };
     }
 }
 
 // ==========================================
-//  SHARING HELPERS
+//  SHARING
 // ==========================================
 
 async function createShare(item) {
     try {
         const { data: { user } } = await supabaseClient.auth.getUser();
-        if (!user) return { success: false, error: "Not logged in" };
-
+        
         const linkPassword = crypto.randomUUID(); 
         const salt = generateSalt();
         const key = await deriveKey(linkPassword, salt);
         
+        // Payload hidden in the link
         const payload = JSON.stringify({
             s: item.site, u: item.username, p: item.password, 
             c: item.color, i: item.logo || ""
@@ -265,6 +261,7 @@ async function createShare(item) {
         const encryptedData = await encryptData(payload, key);
         const saltBase64 = arrayBufferToBase64(salt.buffer);
 
+        // Insert share reference (No redundant site/username stored here)
         const { data, error } = await supabaseClient
             .from('credential_shares')
             .insert({
@@ -273,11 +270,7 @@ async function createShare(item) {
                 shared_to: [],
                 recipient_metadata: {},
                 encrypted_data: encryptedData,
-                salt: saltBase64,
-                // --- ADDED THESE LINES ---
-                site: item.site,       
-                username: item.username 
-                // -------------------------
+                salt: saltBase64
             })
             .select()
             .single();
@@ -285,28 +278,33 @@ async function createShare(item) {
         if (error) throw error;
         return { success: true, link: `https://example.com/#share_id=${data.id}&key=${linkPassword}` };
     } catch (err) {
-        console.error("Share Error:", err);
         return { success: false, error: err.message };
     }
 }
 
-// 2. UPDATED: Join with the credentials table to ensure we have data
 async function getMyShares() {
     const { data: { user } } = await supabaseClient.auth.getUser();
     if (!user) return { success: false };
 
-    // We fetch the share info. 
-    // Since we now save 'site' and 'username' in createShare, select('*') is sufficient.
-    // If you want to be extra safe and fetch from the original credential as backup:
-    // .select('*, credentials(site, username, logo, color)')
-    
+    // Fetch shares AND JOIN with 'credentials' to get the display names
+    // This allows us to display "Netflix" instead of "Unknown" without storing it twice
     const { data, error } = await supabaseClient
         .from('credential_shares')
-        .select('*') 
+        .select(`
+            *,
+            credentials ( site, username )
+        `)
         .eq('share_by', user.id)
         .order('created_at', { ascending: false });
 
-    return { success: !error, data: data };
+    // Flatten data for the Popup
+    const flattened = data ? data.map(item => ({
+        ...item,
+        site: item.credentials?.site || "Unknown",
+        username: item.credentials?.username || "Unknown"
+    })) : [];
+
+    return { success: !error, data: flattened };
 }
 
 async function revokeShare(id) {
@@ -315,8 +313,6 @@ async function revokeShare(id) {
 }
 
 async function resolveSharedLink(shareId, linkPassword) {
-    // Logic mostly unchanged: fetches the RAW blob using Link Key
-    // Used ONLY for the initial "Preview"
     try {
         const { data, error } = await supabaseClient.from('credential_shares').select('*').eq('id', shareId).single();
         if (error || !data) return { success: false, error: "Link invalid" };
@@ -326,5 +322,7 @@ async function resolveSharedLink(shareId, linkPassword) {
         const jsonString = await decryptData(data.encrypted_data, key);
         
         return { success: true, data: JSON.parse(jsonString) };
-    } catch (e) { return { success: false, error: "Invalid Key" }; }
+    } catch (e) {
+        return { success: false, error: "Invalid Key" };
+    }
 }
