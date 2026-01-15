@@ -13,6 +13,14 @@ const shareList = document.getElementById("share-list");
 document.addEventListener("DOMContentLoaded", () => {
     checkUser();
     
+    // Inject Status Container if missing
+    if (!document.getElementById("status-message")) {
+        const msgDiv = document.createElement("div");
+        msgDiv.id = "status-message";
+        msgDiv.style.cssText = "text-align:center; font-size:12px; margin-top:10px; min-height:16px; transition:0.3s; padding:5px;";
+        document.body.appendChild(msgDiv);
+    }
+
     document.getElementById("btn-google-login")?.addEventListener("click", handleGoogleLogin);
     document.getElementById("btn-logout")?.addEventListener("click", handleLogout);
     document.getElementById("btn-setup")?.addEventListener("click", handleSetupVault);
@@ -22,6 +30,16 @@ document.addEventListener("DOMContentLoaded", () => {
     if(tabPasswords) tabPasswords.addEventListener("click", () => switchTab('passwords'));
     if(tabShares) tabShares.addEventListener("click", () => switchTab('shares'));
 });
+
+// --- HELPER: Show Status instead of Alert ---
+function showStatus(text, color = "#ff4444") {
+    const el = document.getElementById("status-message");
+    if (el) {
+        el.style.color = color;
+        el.innerText = text;
+        setTimeout(() => { el.innerText = ""; }, 3000);
+    }
+}
 
 function switchTab(tab) {
     if (tab === 'passwords') {
@@ -48,13 +66,9 @@ async function checkUser() {
     if (!session) { showSection("auth"); return; }
     
     const vaultStatus = await chrome.runtime.sendMessage({ type: "CHECK_VAULT_STATUS" });
-    
     if (vaultStatus.status === "setup_needed") showSection("setup");
     else if (vaultStatus.status === "locked") showSection("unlock");
-    else if (vaultStatus.status === "unlocked") { 
-        showSection("app"); 
-        loadCredentials(); 
-    }
+    else if (vaultStatus.status === "unlocked") { showSection("app"); loadCredentials(); }
 }
 
 async function loadCredentials() {
@@ -72,7 +86,6 @@ async function loadCredentials() {
 
     const renderList = (items, title, isShared) => {
         if (items.length === 0) return;
-        
         const header = document.createElement("div");
         header.style.cssText = "font-size: 11px; font-weight: bold; color: #999; margin: 15px 0 8px 5px; text-transform: uppercase;";
         header.innerText = title;
@@ -81,10 +94,8 @@ async function loadCredentials() {
         items.forEach((item) => {
             const div = document.createElement("div");
             div.className = "bookmark";
-            
             const faviconUrl = item.logo || `https://www.google.com/s2/favicons?domain=${item.site}&sz=64`;
             const accentColor = isShared ? "#ff9800" : (item.color || "#153243"); 
-            
             div.style.borderLeft = `4px solid ${accentColor}`;
 
             div.innerHTML = `
@@ -98,28 +109,20 @@ async function loadCredentials() {
                 ${!isShared ? `
                 <button class="btn-share" title="Share" style="background:none; border:none; cursor:pointer; padding:5px; opacity:0.6;">
                     🔗
-                </button>` : 
-                `<span style="font-size:9px; color:#ff9800; border:1px solid #ff9800; padding:1px 4px; border-radius:3px; font-weight:bold;">SHARED</span>`
-                }
+                </button>` : `<span style="font-size:9px; color:#ff9800; border:1px solid #ff9800; padding:1px 4px; border-radius:3px; font-weight:bold;">SHARED</span>`}
             `;
 
             div.querySelector(".bm-info").addEventListener("click", () => fillCredential(item));
-            
             if (!isShared) {
                 div.querySelector(".btn-share").addEventListener("click", async (e) => {
                     e.stopPropagation();
                     const btn = e.currentTarget;
                     btn.innerText = "⏳";
-                    
                     const res = await chrome.runtime.sendMessage({ type: "CREATE_SHARE", data: item });
-                    
                     if (res?.success) {
-                        await navigator.clipboard.writeText(res.link);
+                        navigator.clipboard.writeText(res.link);
                         btn.innerText = "✔";
-                    } else {
-                        btn.innerText = "❌";
-                        alert(res.error);
-                    }
+                    } else { btn.innerText = "❌"; showStatus(res.error); }
                     setTimeout(() => btn.innerText = "🔗", 2000);
                 });
             }
@@ -131,7 +134,7 @@ async function loadCredentials() {
     renderList(sharedItems, "Shared With Me", true);
 }
 
-// --- UPDATED UI FOR ACTIVE SHARES ---
+// --- UPDATED ACTIVE SHARES UI (Logo + Count) ---
 async function loadActiveShares() {
     shareList.innerHTML = "<div style='padding:10px; text-align:center;'>Loading...</div>";
     const response = await chrome.runtime.sendMessage({ type: "GET_MY_SHARES" });
@@ -151,12 +154,9 @@ async function loadActiveShares() {
         const count = share.shared_to ? share.shared_to.length : 0;
         const siteName = share.site || "Unknown";
         const userName = share.username || "Unknown";
-        
-        // Use custom logo if available, else Google favicon
         const favicon = share.logo || `https://www.google.com/s2/favicons?domain=${siteName}&sz=64`;
-        
-        // Use custom color if available, else default
         const accentColor = share.color || "#153243";
+        
         div.style.borderLeft = `4px solid ${accentColor}`;
 
         div.innerHTML = `
@@ -167,28 +167,27 @@ async function loadActiveShares() {
                     <div style="font-size:12px; color:#666;">${userName}</div>
                     <div style="display:flex; align-items:center; gap:4px; margin-top:3px;">
                         <span style="font-size:10px; color:#555; background:#eee; padding:2px 6px; border-radius:10px;">
-                            👥 Shared with <b>${count}</b> people
+                            👥 <b>${count}</b> Access
                         </span>
                     </div>
                 </div>
             </div>
-            <button class="btn-revoke" style="background:none; border:none; cursor:pointer; color:red; padding:8px; opacity:0.7; transition:0.2s;" title="Revoke Access">
+            <button class="btn-revoke" style="background:none; border:none; cursor:pointer; color:red; padding:8px;" title="Revoke Access">
                 🗑️
             </button>
         `;
         
         div.querySelector(".btn-revoke").addEventListener("click", async () => {
-            if(confirm("Are you sure? Revoking this link will remove access for everyone immediately.")) {
+            if(confirm("Revoke this link? Access will be removed for everyone.")) {
                 const res = await chrome.runtime.sendMessage({ type: "REVOKE_SHARE", id: share.id });
-                if (res.success) loadActiveShares();
+                if (res.success) {
+                    showStatus("Link revoked successfully", "green");
+                    loadActiveShares();
+                } else {
+                    showStatus("Error: " + res.error);
+                }
             }
         });
-        
-        // Hover effect for delete button
-        const btnRevoke = div.querySelector(".btn-revoke");
-        btnRevoke.onmouseover = () => btnRevoke.style.opacity = "1";
-        btnRevoke.onmouseout = () => btnRevoke.style.opacity = "0.7";
-
         shareList.appendChild(div);
     });
 }
@@ -196,12 +195,8 @@ async function loadActiveShares() {
 async function fillCredential(item) {
     const storage = await chrome.storage.local.get(['target_tab_id']);
     let tabId = storage.target_tab_id;
-    if (tabId) {
-        await chrome.storage.local.remove(['target_tab_id']);
-    } else { 
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true }); 
-        tabId = tab?.id; 
-    }
+    if (tabId) { await chrome.storage.local.remove(['target_tab_id']); } 
+    else { const [tab] = await chrome.tabs.query({ active: true, currentWindow: true }); tabId = tab?.id; }
     
     if (tabId) {
         chrome.tabs.sendMessage(tabId, { type: "FILL_CREDENTIALS", data: item });
@@ -222,6 +217,7 @@ async function handleSetupVault() {
     if (pass) { 
         const res = await chrome.runtime.sendMessage({ type: "SETUP_VAULT", password: pass }); 
         if (res.success) checkUser(); 
+        else showStatus(res.error);
     }
 }
 
@@ -230,41 +226,23 @@ async function handleUnlockVault() {
     if (pass) { 
         const res = await chrome.runtime.sendMessage({ type: "UNLOCK_VAULT", password: pass }); 
         if (res.success) checkUser(); 
-        else alert("Incorrect Password");
+        else showStatus("Incorrect Password");
     }
 }
 
-async function handleLockVault() { 
-    await chrome.runtime.sendMessage({ type: "LOCK_VAULT" }); 
-    checkUser(); 
-}
+async function handleLockVault() { await chrome.runtime.sendMessage({ type: "LOCK_VAULT" }); checkUser(); }
 
 async function handleGoogleLogin() {
-    const { data, error } = await supabaseClient.auth.signInWithOAuth({ 
-        provider: "google", 
-        options: { 
-            redirectTo: chrome.identity.getRedirectURL(), 
-            skipBrowserRedirect: true 
-        }
-    });
-    
+    const { data, error } = await supabaseClient.auth.signInWithOAuth({ provider: "google", options: { redirectTo: chrome.identity.getRedirectURL(), skipBrowserRedirect: true }});
     if (!error) {
         chrome.identity.launchWebAuthFlow({ url: data.url, interactive: true }, async (url) => {
             if (url) {
                 const params = new URLSearchParams(new URL(url).hash.substring(1));
-                await supabaseClient.auth.setSession({ 
-                    access_token: params.get("access_token"), 
-                    refresh_token: params.get("refresh_token") 
-                });
+                await supabaseClient.auth.setSession({ access_token: params.get("access_token"), refresh_token: params.get("refresh_token") });
                 checkUser();
             }
         });
-    } else {
-        alert("Login Error: " + error.message);
-    }
+    } else showStatus(error.message);
 }
 
-async function handleLogout() { 
-    await supabaseClient.auth.signOut(); 
-    await handleLockVault(); 
-}
+async function handleLogout() { await supabaseClient.auth.signOut(); await handleLockVault(); }
