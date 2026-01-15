@@ -1,5 +1,6 @@
 const addSaveButton = () => {
     const passwordInputs = document.querySelectorAll('input[type="password"]');
+
     passwordInputs.forEach((input) => {
         if (input.parentNode.querySelector(".pass-save-btn")) return;
         
@@ -68,6 +69,7 @@ function checkSharedLink() {
         const params = new URLSearchParams(window.location.hash.substring(1));
         const shareId = params.get("share_id");
         const linkKey = params.get("key");
+
         if (!shareId || !linkKey) return;
 
         chrome.runtime.sendMessage({ type: "RESOLVE_SHARED_LINK", id: shareId, key: linkKey }, (res) => {

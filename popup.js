@@ -12,14 +12,15 @@ const shareList = document.getElementById("share-list");
 
 document.addEventListener("DOMContentLoaded", () => {
     checkUser();
+    
     document.getElementById("btn-google-login")?.addEventListener("click", handleGoogleLogin);
     document.getElementById("btn-logout")?.addEventListener("click", handleLogout);
     document.getElementById("btn-setup")?.addEventListener("click", handleSetupVault);
     document.getElementById("btn-unlock")?.addEventListener("click", handleUnlockVault);
     document.getElementById("btn-lock")?.addEventListener("click", handleLockVault);
 
-    if (tabPasswords) tabPasswords.addEventListener("click", () => switchTab('passwords'));
-    if (tabShares) tabShares.addEventListener("click", () => switchTab('shares'));
+    if(tabPasswords) tabPasswords.addEventListener("click", () => switchTab('passwords'));
+    if(tabShares) tabShares.addEventListener("click", () => switchTab('shares'));
 });
 
 function switchTab(tab) {
@@ -30,7 +31,7 @@ function switchTab(tab) {
         tabPasswords.style.color = '#153243';
         tabShares.style.fontWeight = 'normal';
         tabShares.style.color = '#888';
-        loadCredentials();
+        loadCredentials(); 
     } else {
         passwordList.style.display = 'none';
         shareList.style.display = 'block';
@@ -45,10 +46,15 @@ function switchTab(tab) {
 async function checkUser() {
     const { data: { session } } = await supabaseClient.auth.getSession();
     if (!session) { showSection("auth"); return; }
+    
     const vaultStatus = await chrome.runtime.sendMessage({ type: "CHECK_VAULT_STATUS" });
+    
     if (vaultStatus.status === "setup_needed") showSection("setup");
     else if (vaultStatus.status === "locked") showSection("unlock");
-    else if (vaultStatus.status === "unlocked") { showSection("app"); loadCredentials(); }
+    else if (vaultStatus.status === "unlocked") { 
+        showSection("app"); 
+        loadCredentials(); 
+    }
 }
 
 async function loadCredentials() {
@@ -66,6 +72,7 @@ async function loadCredentials() {
 
     const renderList = (items, title, isShared) => {
         if (items.length === 0) return;
+        
         const header = document.createElement("div");
         header.style.cssText = "font-size: 11px; font-weight: bold; color: #999; margin: 15px 0 8px 5px; text-transform: uppercase;";
         header.innerText = title;
@@ -74,8 +81,10 @@ async function loadCredentials() {
         items.forEach((item) => {
             const div = document.createElement("div");
             div.className = "bookmark";
+            
             const faviconUrl = item.logo || `https://www.google.com/s2/favicons?domain=${item.site}&sz=64`;
-            const accentColor = isShared ? "#ff9800" : (item.color || "#153243");
+            const accentColor = isShared ? "#ff9800" : (item.color || "#153243"); 
+            
             div.style.borderLeft = `4px solid ${accentColor}`;
 
             div.innerHTML = `
@@ -89,18 +98,23 @@ async function loadCredentials() {
                 ${!isShared ? `
                 <button class="btn-share" title="Share" style="background:none; border:none; cursor:pointer; padding:5px; opacity:0.6;">
                     🔗
-                </button>` : `<span style="font-size:9px; color:#ff9800; border:1px solid #ff9800; padding:1px 4px; border-radius:3px; font-weight:bold;">SHARED</span>`}
+                </button>` : 
+                `<span style="font-size:9px; color:#ff9800; border:1px solid #ff9800; padding:1px 4px; border-radius:3px; font-weight:bold;">SHARED</span>`
+                }
             `;
 
             div.querySelector(".bm-info").addEventListener("click", () => fillCredential(item));
+            
             if (!isShared) {
                 div.querySelector(".btn-share").addEventListener("click", async (e) => {
                     e.stopPropagation();
                     const btn = e.currentTarget;
                     btn.innerText = "⏳";
+                    
                     const res = await chrome.runtime.sendMessage({ type: "CREATE_SHARE", data: item });
+                    
                     if (res?.success) {
-                        navigator.clipboard.writeText(res.link);
+                        await navigator.clipboard.writeText(res.link);
                         btn.innerText = "✔";
                     } else {
                         btn.innerText = "❌";
@@ -113,7 +127,7 @@ async function loadCredentials() {
         });
     };
 
-    renderList(myItems, "My Vault", false);
+    renderList(myItems, "My Vault", false); 
     renderList(sharedItems, "Shared With Me", true);
 }
 
@@ -121,6 +135,7 @@ async function loadActiveShares() {
     shareList.innerHTML = "<div style='padding:10px; text-align:center;'>Loading...</div>";
     const response = await chrome.runtime.sendMessage({ type: "GET_MY_SHARES" });
     shareList.innerHTML = "";
+
     if (!response.success || !response.data || response.data.length === 0) {
         shareList.innerHTML = "<div style='padding:20px; text-align:center; color:#888;'>No active share links.</div>";
         return;
@@ -130,6 +145,7 @@ async function loadActiveShares() {
         const div = document.createElement("div");
         div.className = "bookmark";
         div.style.justifyContent = "space-between";
+        
         const count = share.shared_to ? share.shared_to.length : 0;
         const siteName = share.site || "Unknown";
         const userName = share.username || "Unknown";
@@ -146,8 +162,9 @@ async function loadActiveShares() {
             </div>
             <button class="btn-revoke" style="background:none; border:none; cursor:pointer; color:red; padding:5px;">🗑️</button>
         `;
+        
         div.querySelector(".btn-revoke").addEventListener("click", async () => {
-            if (confirm("Revoke this link?")) {
+            if(confirm("Revoke this link?")) {
                 const res = await chrome.runtime.sendMessage({ type: "REVOKE_SHARE", id: share.id });
                 if (res.success) loadActiveShares();
             }
@@ -159,14 +176,19 @@ async function loadActiveShares() {
 async function fillCredential(item) {
     const storage = await chrome.storage.local.get(['target_tab_id']);
     let tabId = storage.target_tab_id;
-    if (tabId) await chrome.storage.local.remove(['target_tab_id']);
-    else { const [tab] = await chrome.tabs.query({ active: true, currentWindow: true }); tabId = tab?.id; }
+    if (tabId) {
+        await chrome.storage.local.remove(['target_tab_id']);
+    } else { 
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true }); 
+        tabId = tab?.id; 
+    }
+    
     if (tabId) {
         chrome.tabs.sendMessage(tabId, { type: "FILL_CREDENTIALS", data: item });
         setTimeout(() => window.close(), 100);
     }
 }
-// ... (Auth helpers unchanged) ...
+
 function showSection(name) {
     [authSection, appSection, setupSection, unlockSection].forEach(el => el.style.display = "none");
     if (name === "auth") authSection.style.display = "block";
@@ -174,25 +196,55 @@ function showSection(name) {
     if (name === "setup") setupSection.style.display = "block";
     if (name === "unlock") unlockSection.style.display = "block";
 }
+
 async function handleSetupVault() {
     const pass = document.getElementById("setup-pass").value;
-    if (pass) { const res = await chrome.runtime.sendMessage({ type: "SETUP_VAULT", password: pass }); if (res.success) checkUser(); }
+    if (pass) { 
+        const res = await chrome.runtime.sendMessage({ type: "SETUP_VAULT", password: pass }); 
+        if (res.success) checkUser(); 
+    }
 }
+
 async function handleUnlockVault() {
     const pass = document.getElementById("unlock-pass").value;
-    if (pass) { const res = await chrome.runtime.sendMessage({ type: "UNLOCK_VAULT", password: pass }); if (res.success) checkUser(); else alert("Incorrect Password"); }
+    if (pass) { 
+        const res = await chrome.runtime.sendMessage({ type: "UNLOCK_VAULT", password: pass }); 
+        if (res.success) checkUser(); 
+        else alert("Incorrect Password");
+    }
 }
-async function handleLockVault() { await chrome.runtime.sendMessage({ type: "LOCK_VAULT" }); checkUser(); }
+
+async function handleLockVault() { 
+    await chrome.runtime.sendMessage({ type: "LOCK_VAULT" }); 
+    checkUser(); 
+}
+
 async function handleGoogleLogin() {
-    const { data, error } = await supabaseClient.auth.signInWithOAuth({ provider: "google", options: { redirectTo: chrome.identity.getRedirectURL(), skipBrowserRedirect: true } });
+    const { data, error } = await supabaseClient.auth.signInWithOAuth({ 
+        provider: "google", 
+        options: { 
+            redirectTo: chrome.identity.getRedirectURL(), 
+            skipBrowserRedirect: true 
+        }
+    });
+    
     if (!error) {
         chrome.identity.launchWebAuthFlow({ url: data.url, interactive: true }, async (url) => {
             if (url) {
                 const params = new URLSearchParams(new URL(url).hash.substring(1));
-                await supabaseClient.auth.setSession({ access_token: params.get("access_token"), refresh_token: params.get("refresh_token") });
+                await supabaseClient.auth.setSession({ 
+                    access_token: params.get("access_token"), 
+                    refresh_token: params.get("refresh_token") 
+                });
                 checkUser();
             }
         });
-    } else alert(error.message);
+    } else {
+        alert("Login Error: " + error.message);
+    }
 }
-async function handleLogout() { await supabaseClient.auth.signOut(); await handleLockVault(); }
+
+async function handleLogout() { 
+    await supabaseClient.auth.signOut(); 
+    await handleLockVault(); 
+}

@@ -11,7 +11,7 @@ import {
 let sessionKey = null; 
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    // --- VAULT ---
+    // --- VAULT MANAGEMENT ---
     if (message.type === "CHECK_VAULT_STATUS") {
         checkVaultStatus().then(sendResponse);
         return true; 
@@ -30,11 +30,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     }
 
-    // --- DATA ---
+    // --- DATA FETCHING ---
     else if (message.type === "GET_DECRYPTED_CREDENTIALS") {
         getDecryptedCredentials().then(sendResponse);
         return true;
     }
+
+    // --- SAVING ---
     else if (message.type === "SAVE_PASSWORD") {
         handleSavePassword(message.data).then(sendResponse);
         return true;
@@ -43,8 +45,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         saveShareAccess(message.data).then(sendResponse);
         return true;
     }
-
-    // --- POPUP ---
+    
+    // --- UTILS ---
     else if (message.type === "OPEN_POPUP") {
         if (sender.tab?.id) chrome.storage.local.set({ 'target_tab_id': sender.tab.id });
         chrome.windows.create({ url: "popup.html", type: "popup", width: 360, height: 600, focused: true });
@@ -69,7 +71,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 });
 
-// --- VAULT HELPERS ---
+// ==========================================
+//  VAULT HELPERS
+// ==========================================
 
 async function checkVaultStatus() {
     const storage = await chrome.storage.local.get(["vault_salt", "vault_validator"]);
@@ -115,7 +119,9 @@ async function unlockVault(masterPassword) {
     }
 }
 
-// --- DATA LOGIC ---
+// ==========================================
+//  DATA LOGIC
+// ==========================================
 
 async function getDecryptedCredentials() {
     if (!sessionKey) return { success: false, error: "Vault locked" };
@@ -131,11 +137,14 @@ async function getDecryptedCredentials() {
             try {
                 const plain = await decryptData(item.password, sessionKey);
                 allCredentials.push({ ...item, password: plain, is_shared: false });
-            } catch (e) { /* Ignore decrypt errors */ }
+            } catch (e) { 
+                // Ignore old bad data, just skip it
+                console.warn("Skipping item (bad key):", item.site);
+            }
         }
     }
 
-    // 2. Fetch SHARED (Using the RPC we just created)
+    // 2. Fetch SHARED (Using fixed RPC)
     const { data: shared, error: err2 } = await supabaseClient.rpc("get_shared_items_for_user", { 
         my_user_id: user.id 
     });
@@ -168,7 +177,7 @@ async function handleSavePassword(data) {
     if (!sessionKey) return { success: false, error: "Vault locked" };
     const { data: { user } } = await supabaseClient.auth.getUser();
     
-    // Check duplicate
+    // Check duplicates
     const { data: existing } = await supabaseClient.from('credentials').select('id')
         .eq('site', data.site).eq('username', data.username).eq('user_id', user.id);
     if (existing && existing.length > 0) return { success: false, error: "Duplicate credential." };
@@ -223,6 +232,7 @@ async function createShare(item) {
         const salt = generateSalt();
         const key = await deriveKey(linkPassword, salt);
         
+        // Only share what's needed for the preview
         const payload = JSON.stringify({
             s: item.site, u: item.username, p: item.password, c: item.color, i: item.logo || ""
         });
@@ -230,7 +240,6 @@ async function createShare(item) {
         const encryptedData = await encryptData(payload, key);
         const saltBase64 = arrayBufferToBase64(salt.buffer);
 
-        // Insert share (NO site/username here, relies on credential_id)
         const { data, error } = await supabaseClient
             .from('credential_shares')
             .insert({
@@ -255,16 +264,14 @@ async function getMyShares() {
     const { data: { user } } = await supabaseClient.auth.getUser();
     if (!user) return { success: false };
 
-    // This JOIN requires the Foreign Key we added in Step 1
+    // Fetch shares with JOIN to credentials to get Site/Username
     const { data, error } = await supabaseClient
         .from('credential_shares')
-        .select(`
-            *,
-            credentials ( site, username )
-        `)
+        .select(`*, credentials ( site, username )`)
         .eq('share_by', user.id)
         .order('created_at', { ascending: false });
 
+    // Flatten for UI
     const flattened = data ? data.map(item => ({
         ...item,
         site: item.credentials?.site || "Unknown",
@@ -281,7 +288,7 @@ async function revokeShare(id) {
 
 async function resolveSharedLink(shareId, linkPassword) {
     try {
-        // Fetch share + Site info for preview
+        // Fetch share + join credentials for the Preview Alert
         const { data, error } = await supabaseClient
             .from('credential_shares')
             .select(`*, credentials(site, username)`)
@@ -293,16 +300,15 @@ async function resolveSharedLink(shareId, linkPassword) {
         const salt = base64ToArrayBuffer(data.salt);
         const key = await deriveKey(linkPassword, salt);
         const jsonString = await decryptData(data.encrypted_data, key);
-        
-        // Pass back info for the confirmation prompt
         const decrypted = JSON.parse(jsonString);
+
         return { 
             success: true, 
             data: { 
-                ...decrypted, 
-                s: data.credentials?.site || decrypted.s, // Use DB site if available
+                ...decrypted,
+                s: data.credentials?.site || decrypted.s, // Prefer DB site name
                 u: data.credentials?.username || decrypted.u 
-            }
+            } 
         };
     } catch (e) {
         return { success: false, error: "Invalid Key" };
