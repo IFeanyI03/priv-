@@ -81,25 +81,32 @@ chrome.action.onClicked.addListener((tab) => {
 //  VAULT HELPERS (Now with Cloud Sync)
 // ==========================================
 
+// background.js
+
 async function checkVaultStatus() {
     if (sessionKey) return { status: "unlocked" };
 
-    // 1. Check Local Storage (Fastest)
-    const local = await chrome.storage.local.get(["vault_salt", "vault_validator"]);
-    if (local.vault_salt && local.vault_validator) return { status: "locked" };
-
-    // 2. Check Supabase (If new device/browser)
     const { data: { user } } = await supabaseClient.auth.getUser();
-    if (!user) return { status: "setup_needed" }; // No user = can't check cloud
+    if (!user) return { status: "setup_needed" }; // No user, show auth
 
+    // 1. Check Local Storage with User ID prefix
+    const storageKey = `vault_${user.id}`;
+    const local = await chrome.storage.local.get([storageKey]);
+    
+    if (local[storageKey] && local[storageKey].vault_salt) {
+        return { status: "locked" };
+    }
+
+    // 2. Fallback: Check Supabase 'profiles' (Cloud Sync)
     const { data: profile } = await supabaseClient
         .from('profiles')
-        .select('vault_salt')
+        .select('vault_salt, vault_validator')
         .eq('id', user.id)
         .single();
 
     if (profile && profile.vault_salt) {
-        // Vault exists in cloud! Sync it later during unlock.
+        // Sync to local for this user
+        await chrome.storage.local.set({ [storageKey]: profile });
         return { status: "locked" };
     }
 
@@ -116,20 +123,24 @@ async function setupVault(masterPassword) {
         const validationToken = await encryptData("VALID", key);
         const saltBase64 = arrayBufferToBase64(salt.buffer);
         
-        // 1. Save to Cloud (Profiles Table)
+        const vaultData = {
+            vault_salt: saltBase64,
+            vault_validator: validationToken
+        };
+
+        // 1. Save to Cloud
         const { error } = await supabaseClient
             .from('profiles')
             .upsert({
                 id: user.id,
-                vault_salt: saltBase64,
-                vault_validator: validationToken,
+                ...vaultData,
                 updated_at: new Date()
             });
 
         if (error) throw error;
 
-        // 2. Save to Local
-        await chrome.storage.local.set({ vault_salt: saltBase64, vault_validator: validationToken });
+        // 2. Save to Local with User ID prefix
+        await chrome.storage.local.set({ [`vault_${user.id}`]: vaultData });
         
         sessionKey = key;
         return { success: true };
@@ -140,39 +151,22 @@ async function setupVault(masterPassword) {
 
 async function unlockVault(masterPassword) {
     try {
-        let saltBase64, validator;
+        const { data: { user } } = await supabaseClient.auth.getUser();
+        if (!user) return { success: false, error: "Not logged in" };
 
-        // 1. Try Local Storage
-        const local = await chrome.storage.local.get(["vault_salt", "vault_validator"]);
-        if (local.vault_salt && local.vault_validator) {
-            saltBase64 = local.vault_salt;
-            validator = local.vault_validator;
-        } else {
-            // 2. Fallback to Cloud (Sync)
-            const { data: { user } } = await supabaseClient.auth.getUser();
-            if (!user) return { success: false, error: "Not logged in" };
+        const storageKey = `vault_${user.id}`;
+        const local = await chrome.storage.local.get([storageKey]);
+        const vaultData = local[storageKey];
 
-            const { data: profile, error } = await supabaseClient
-                .from('profiles')
-                .select('*')
-                .eq('id', user.id)
-                .single();
-            
-            if (error || !profile) return { success: false, error: "No vault found on account." };
-
-            saltBase64 = profile.vault_salt;
-            validator = profile.vault_validator;
-
-            // Cache locally for next time
-            await chrome.storage.local.set({ vault_salt: saltBase64, vault_validator: validator });
+        if (!vaultData || !vaultData.vault_salt) {
+            return { success: false, error: "No vault found for this user." };
         }
 
-        // 3. Derive & Validate
-        const salt = base64ToArrayBuffer(saltBase64);
+        const salt = base64ToArrayBuffer(vaultData.vault_salt);
         const key = await deriveKey(masterPassword, salt);
         
         try {
-            const check = await decryptData(validator, key);
+            const check = await decryptData(vaultData.vault_validator, key);
             if (check !== "VALID") throw new Error("Invalid password");
         } catch (e) {
             return { success: false, error: "Incorrect password" };
@@ -181,7 +175,7 @@ async function unlockVault(masterPassword) {
         sessionKey = key; 
         return { success: true };
     } catch (err) {
-        return { success: false, error: "Unlock failed: " + err.message };
+        return { success: false, error: "Unlock failed" };
     }
 }
 
