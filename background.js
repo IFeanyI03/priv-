@@ -295,23 +295,33 @@ async function createShare(item) {
 
 async function getMyShares() {
     const { data: { user } } = await supabaseClient.auth.getUser();
-    if (!user) return { success: false };
+    if (!user) {
+        console.log("No user logged in");
+        return { success: false };
+    }
 
-    const { data, error } = await supabaseClient
-        .from('credential_shares')
-        .select(`*, credentials ( site, username, logo, color )`)
-        .eq('share_by', user.id)
-        .order('created_at', { ascending: false });
+    // DEBUG: Log the ID to verify it matches the database 'share_by' column
+    console.log("Fetching shares for User ID:", user.id); 
 
-    const flattened = data ? data.map(item => ({
+    // USE THE NEW RPC FUNCTION
+    const { data, error } = await supabaseClient.rpc("get_created_shares");
+
+    if (error) {
+        console.error("RPC Error:", error);
+        return { success: false, error: error.message };
+    }
+
+    // The RPC already returns the joined data (site, username, etc.)
+    // We just need to handle the case where the parent credential might be deleted
+    const formattedData = data.map(item => ({
         ...item,
-        site: item.credentials?.site || "Unknown",
-        username: item.credentials?.username || "Unknown",
-        logo: item.credentials?.logo || "",
-        color: item.credentials?.color || ""
-    })) : [];
+        site: item.site || "Deleted Credential",
+        username: item.site ? item.username : "(Original credential removed)",
+        logo: item.logo || "",
+        color: item.color || "#7f8c8d"
+    }));
 
-    return { success: !error, data: flattened };
+    return { success: true, data: formattedData };
 }
 
 async function revokeShare(id) {
