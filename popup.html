@@ -1,55 +1,225 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
-    <link rel="stylesheet" href="popup.css">
-    <meta charset="UTF-8">
-</head>
-<body>
-    <div class="container">
-        
-        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:15px;">
-            <div style="display:flex; align-items:center; gap:8px;">
-                <img src="assets/save.png" width="24" height="24" />
-                <h2 style="margin:0; font-size:18px; color:#153243;">Privé</h2>
+    <head>
+        <meta charset="UTF-8" />
+        <link href="popup.css" rel="stylesheet" type="text/css" />
+        <script type="module" src="popup.js"></script>
+    </head>
+    <body>
+        <div class="container">
+            <h3>My Pass Manager</h3>
+
+            <div
+                id="setup-section"
+                style="display: none; text-align: center; margin-top: 50px"
+            >
+                <p style="color: #666; margin-bottom: 20px">
+                    Create a 4-digit Master PIN.
+                </p>
+                <input
+                    type="password"
+                    id="setup-pass"
+                    placeholder="Enter 4-digit PIN"
+                    maxlength="4"
+                    inputmode="numeric"
+                    style="
+                        width: 100%;
+                        padding: 12px;
+                        margin-bottom: 15px;
+                        border: 1px solid #ccc;
+                        border-radius: 4px;
+                        box-sizing: border-box;
+                        text-align: center;
+                        letter-spacing: 5px;
+                    "
+                />
+                <button
+                    id="btn-setup"
+                    style="
+                        width: 100%;
+                        padding: 12px;
+                        background: #4caf50;
+                        color: white;
+                        border: none;
+                        border-radius: 4px;
+                        cursor: pointer;
+                    "
+                >
+                    Create Vault
+                </button>
             </div>
-            <button id="btn-lock" style="background:none; border:none; cursor:pointer; font-size:18px;" title="Lock Vault">🔒</button>
-        </div>
 
-        <div id="auth-section">
-            <p style="text-align:center; color:#666; font-size:13px; margin-bottom:20px;">Secure your digital life.</p>
-            <button id="btn-google-login" class="btn-primary">Sign in with Google</button>
-        </div>
+            <div
+                id="unlock-section"
+                style="display: none; text-align: center; margin-top: 50px"
+            >
+                <p style="color: #666; margin-bottom: 20px">
+                    Enter Master PIN to unlock.
+                </p>
 
-        <div id="setup-section" style="display:none; text-align:center;">
-            <h3>Create Master Password</h3>
-            <p style="color:#666; font-size:12px;">This password encrypts your vault. Do not lose it.</p>
-            <input type="password" id="setup-pass" placeholder="Enter Master Password" style="width:100%; padding:10px; margin:10px 0; border:1px solid #ccc; border-radius:4px;">
-            <button id="btn-setup" class="btn-primary">Create Vault</button>
-        </div>
+                <div class="pin-container">
+                    <input
+                        type="password"
+                        class="pin-input"
+                        maxlength="1"
+                        inputmode="numeric"
+                    />
+                    <input
+                        type="password"
+                        class="pin-input"
+                        maxlength="1"
+                        inputmode="numeric"
+                    />
+                    <input
+                        type="password"
+                        class="pin-input"
+                        maxlength="1"
+                        inputmode="numeric"
+                    />
+                    <input
+                        type="password"
+                        class="pin-input"
+                        maxlength="1"
+                        inputmode="numeric"
+                    />
+                </div>
 
-        <div id="unlock-section" style="display:none; text-align:center;">
-            <h3>Unlock Vault</h3>
-            <input type="password" id="unlock-pass" placeholder="Master Password" style="width:100%; padding:10px; margin:10px 0; border:1px solid #ccc; border-radius:4px;">
-            <button id="btn-unlock" class="btn-primary">Unlock</button>
-            <div style="margin-top:10px;">
-                <button id="btn-logout" style="background:none; border:none; color:#666; cursor:pointer; font-size:12px;">Logout</button>
+                <button
+                    id="btn-unlock"
+                    style="
+                        width: 100%;
+                        padding: 12px;
+                        background: #333;
+                        color: white;
+                        border: none;
+                        border-radius: 4px;
+                        cursor: pointer;
+                    "
+                >
+                    Unlock
+                </button>
+                <div
+                    id="unlock-error"
+                    style="color: red; margin-top: 10px; font-size: 12px"
+                ></div>
+            </div>
+
+            <div id="auth-section" style="display: none">
+                <p style="text-align: center; margin-bottom: 15px">
+                    Sign in to sync your passwords
+                </p>
+                <button
+                    id="btn-google-login"
+                    style="
+                        background-color: #153243;
+                        color: white;
+                        width: 100%;
+                        padding: 12px;
+                        border: none;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-weight: bold;
+                    "
+                >
+                    Sign in with Google
+                </button>
+                <div
+                    id="auth-message"
+                    style="
+                        color: red;
+                        margin-top: 10px;
+                        font-size: 12px;
+                        text-align: center;
+                    "
+                ></div>
+            </div>
+
+            <div
+                id="app-section"
+                style="display: none; height: 100%; flex-direction: column"
+            >
+                <div
+                    style="
+                        display: flex;
+                        justify-content: space-around;
+                        margin-bottom: 10px;
+                        border-bottom: 1px solid #eee;
+                        padding-bottom: 10px;
+                    "
+                >
+                    <span
+                        id="tab-passwords"
+                        style="
+                            font-weight: bold;
+                            cursor: pointer;
+                            color: #153243;
+                            flex: 1;
+                            text-align: center;
+                        "
+                        >Passwords</span
+                    >
+                    <span
+                        id="tab-shares"
+                        style="
+                            cursor: pointer;
+                            color: #888;
+                            flex: 1;
+                            text-align: center;
+                        "
+                        >Shared Links</span
+                    >
+                </div>
+
+                <div
+                    style="
+                        flex-grow: 1;
+                        overflow-y: auto;
+                        overflow-x: hidden;
+                        padding-right: 5px;
+                    "
+                >
+                    <div id="password-list"></div>
+                    <div id="share-list" style="display: none"></div>
+                </div>
+
+                <div
+                    style="
+                        margin-top: auto;
+                        padding-top: 10px;
+                        border-top: 1px solid #eee;
+                    "
+                >
+                    <button
+                        id="btn-lock"
+                        style="
+                            width: 100%;
+                            padding: 10px;
+                            margin-bottom: 5px;
+                            background: #666;
+                            color: white;
+                            border: none;
+                            border-radius: 4px;
+                            cursor: pointer;
+                        "
+                    >
+                        Lock Vault
+                    </button>
+                    <button
+                        id="btn-logout"
+                        style="
+                            width: 100%;
+                            padding: 10px;
+                            background: transparent;
+                            border: 1px solid #ddd;
+                            color: #555;
+                            border-radius: 4px;
+                            cursor: pointer;
+                        "
+                    >
+                        Log Out
+                    </button>
+                </div>
             </div>
         </div>
-
-        <div id="app-section" style="display:none; flex-direction:column; height:450px;">
-            
-            <div style="display:flex; justify-content:space-around; border-bottom:1px solid #ddd; padding-bottom:10px; margin-bottom:10px;">
-                <div id="tab-passwords" style="cursor:pointer; font-weight:bold; color:#153243;">My Vault</div>
-                <div id="tab-shares" style="cursor:pointer; color:#888;">Shared Links</div>
-            </div>
-
-            <div id="password-list" style="flex-grow:1; overflow-y:auto; padding-right:5px;"></div>
-            <div id="share-list" style="display:none; flex-grow:1; overflow-y:auto; padding-right:5px;"></div>
-        </div>
-
-        <div id="status-message"></div>
-
-    </div>
-    <script type="module" src="popup.js"></script>
-</body>
+    </body>
 </html>

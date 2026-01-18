@@ -10,17 +10,12 @@ const tabShares = document.getElementById("tab-shares");
 const passwordList = document.getElementById("password-list");
 const shareList = document.getElementById("share-list");
 
+// Get the 4 input boxes for the PIN
+const pinInputs = document.querySelectorAll(".pin-input");
+
 document.addEventListener("DOMContentLoaded", () => {
     checkUser();
-
-    // Inject Status Container if missing (REPLACES ALERTS)
-    if (!document.getElementById("status-message")) {
-        const msgDiv = document.createElement("div");
-        msgDiv.id = "status-message";
-        msgDiv.style.cssText =
-            "text-align:center; font-size:12px; margin-top:10px; min-height:16px; transition:0.3s; padding:5px;";
-        document.body.appendChild(msgDiv);
-    }
+    setupPinInputs(); // Initialize the PIN input behavior
 
     document
         .getElementById("btn-google-login")
@@ -44,17 +39,36 @@ document.addEventListener("DOMContentLoaded", () => {
         tabShares.addEventListener("click", () => switchTab("shares"));
 });
 
-// --- HELPER: Show Status instead of Alert ---
-function showStatus(text, color = "#ff4444") {
-    const el = document.getElementById("status-message");
-    if (el) {
-        el.style.color = color;
-        el.innerText = text;
-        // Clear message after 3 seconds
-        setTimeout(() => {
-            el.innerText = "";
-        }, 3000);
-    }
+// --- NEW: 4-Digit PIN Input Logic ---
+function setupPinInputs() {
+    pinInputs.forEach((input, index) => {
+        // 1. Move to next input automatically when a digit is typed
+        input.addEventListener("input", (e) => {
+            if (input.value.length === 1) {
+                if (index < pinInputs.length - 1) {
+                    pinInputs[index + 1].focus();
+                } else {
+                    // Optional: You could trigger unlock immediately on the last digit here
+                    // handleUnlockVault();
+                }
+            }
+        });
+
+        // 2. Handle Backspace (move focus to previous input)
+        input.addEventListener("keydown", (e) => {
+            if (e.key === "Backspace" && input.value === "") {
+                if (index > 0) {
+                    pinInputs[index - 1].focus();
+                }
+            }
+            if (e.key === "Enter") {
+                handleUnlockVault();
+            }
+        });
+
+        // 3. Select existing text when clicking an input (easier editing)
+        input.addEventListener("focus", () => input.select());
+    });
 }
 
 function switchTab(tab) {
@@ -99,7 +113,7 @@ async function checkUser() {
 
 async function loadCredentials() {
     passwordList.innerHTML =
-        "<div style='padding:10px; text-align:center;'>Loading...</div>";
+        "<div style='padding:20px; text-align:center; color:#888;'>Loading...</div>";
     const response = await chrome.runtime.sendMessage({
         type: "GET_DECRYPTED_CREDENTIALS",
     });
@@ -111,11 +125,14 @@ async function loadCredentials() {
         return;
     }
 
+    // Sort: Non-shared first
     const myItems = response.data.filter((item) => !item.is_shared);
     const sharedItems = response.data.filter((item) => item.is_shared);
 
     const renderList = (items, title, isShared) => {
         if (items.length === 0) return;
+
+        // Section Header
         const header = document.createElement("div");
         header.style.cssText =
             "font-size: 11px; font-weight: bold; color: #999; margin: 15px 0 8px 5px; text-transform: uppercase;";
@@ -124,7 +141,10 @@ async function loadCredentials() {
 
         items.forEach((item) => {
             const div = document.createElement("div");
-            div.className = "bookmark";
+            // Basic styling for the list item (you can move this to CSS class 'bookmark')
+            div.style.cssText =
+                "background: white; padding: 12px; margin-bottom: 10px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #eee; display: flex; align-items: center; gap: 12px; cursor: pointer;";
+
             const faviconUrl =
                 item.logo ||
                 `https://www.google.com/s2/favicons?domain=${item.site}&sz=64`;
@@ -132,15 +152,11 @@ async function loadCredentials() {
             div.style.borderLeft = `4px solid ${accentColor}`;
 
             div.innerHTML = `
-                <div class="bm-info" style="display:flex; align-items:center; gap:12px; flex-grow:1; cursor:pointer;">
+                <div class="bm-info" style="display:flex; align-items:center; gap:12px; flex-grow:1;">
                     <img src="${faviconUrl}" style="width: 28px; height: 28px; border-radius: 4px;" />
                     <div>
-                        <div style="font-weight: 600; font-size: 14px; color: #333;">${
-                            item.site || "Unknown"
-                        }</div>
-                        <div style="font-size: 12px; color: #777;">${
-                            item.username || "No User"
-                        }</div>
+                        <div style="font-weight: 600; font-size: 14px; color: #333;">${item.site || "Unknown"}</div>
+                        <div style="font-size: 12px; color: #777;">${item.username || "No User"}</div>
                     </div>
                 </div>
                 ${
@@ -153,9 +169,12 @@ async function loadCredentials() {
                 }
             `;
 
+            // Click to fill
             div.querySelector(".bm-info").addEventListener("click", () =>
                 fillCredential(item),
             );
+
+            // Share button logic
             if (!isShared) {
                 div.querySelector(".btn-share").addEventListener(
                     "click",
@@ -172,7 +191,7 @@ async function loadCredentials() {
                             btn.innerText = "✔";
                         } else {
                             btn.innerText = "❌";
-                            showStatus(res.error);
+                            alert(res.error);
                         }
                         setTimeout(() => (btn.innerText = "🔗"), 2000);
                     },
@@ -186,10 +205,9 @@ async function loadCredentials() {
     renderList(sharedItems, "Shared With Me", true);
 }
 
-// --- UPDATED ACTIVE SHARES UI (Logo + Count + Fix Unknown) ---
 async function loadActiveShares() {
     shareList.innerHTML =
-        "<div style='padding:10px; text-align:center;'>Loading...</div>";
+        "<div style='padding:20px; text-align:center; color:#888;'>Loading...</div>";
     const response = await chrome.runtime.sendMessage({
         type: "GET_MY_SHARES",
     });
@@ -203,9 +221,8 @@ async function loadActiveShares() {
 
     response.data.forEach((share) => {
         const div = document.createElement("div");
-        div.className = "bookmark";
-        div.style.justifyContent = "space-between";
-        div.style.alignItems = "center";
+        div.style.cssText =
+            "background: white; padding: 12px; margin-bottom: 10px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;";
 
         const count = share.shared_to ? share.shared_to.length : 0;
         const siteName = share.site || "Unknown";
@@ -246,10 +263,9 @@ async function loadActiveShares() {
                     id: share.id,
                 });
                 if (res.success) {
-                    showStatus("Link revoked successfully", "green");
                     loadActiveShares();
                 } else {
-                    showStatus("Error: " + res.error);
+                    alert("Error: " + res.error);
                 }
             }
         });
@@ -257,7 +273,7 @@ async function loadActiveShares() {
     });
 }
 
-// --- UPDATED FILL LOGIC (TRIGGERS PRIVACY MODE) ---
+// --- FILL CREDENTIAL (With Privacy Mode Trigger) ---
 async function fillCredential(item) {
     const storage = await chrome.storage.local.get(["target_tab_id"]);
     let tabId = storage.target_tab_id;
@@ -272,10 +288,10 @@ async function fillCredential(item) {
     }
 
     if (tabId) {
-        // 1. Tell background to disable Chrome's password manager temporarily
+        // 1. Trigger Privacy Mode (Stop Chrome Save Prompt)
         chrome.runtime.sendMessage({ type: "TRIGGER_PRIVACY_MODE" });
 
-        // 2. Fill the credentials as usual
+        // 2. Fill Credential
         chrome.tabs.sendMessage(tabId, {
             type: "FILL_CREDENTIALS",
             data: item,
@@ -292,35 +308,63 @@ function showSection(name) {
     if (name === "auth") authSection.style.display = "block";
     if (name === "app") appSection.style.display = "flex";
     if (name === "setup") setupSection.style.display = "block";
-    if (name === "unlock") unlockSection.style.display = "block";
+
+    if (name === "unlock") {
+        unlockSection.style.display = "block";
+        // Auto-focus the first PIN box when unlocking
+        setTimeout(() => {
+            if (pinInputs[0]) pinInputs[0].focus();
+        }, 50);
+    }
 }
 
 async function handleSetupVault() {
     const pass = document.getElementById("setup-pass").value;
     if (pass) {
+        // Optional: Enforce 4-digit check here too if you want
+        if (pass.length !== 4) {
+            alert("Please enter a 4-digit PIN for the setup.");
+            return;
+        }
+
         const res = await chrome.runtime.sendMessage({
             type: "SETUP_VAULT",
             password: pass,
         });
         if (res.success) checkUser();
-        else showStatus(res.error);
+        else alert(res.error);
     }
 }
 
+// --- UPDATED UNLOCK: Combine 4 digits ---
 async function handleUnlockVault() {
-    const pass = document.getElementById("unlock-pass").value;
-    if (pass) {
+    let pass = "";
+    pinInputs.forEach((input) => (pass += input.value));
+
+    if (pass.length === 4) {
         const res = await chrome.runtime.sendMessage({
             type: "UNLOCK_VAULT",
             password: pass,
         });
-        if (res.success) checkUser();
-        else showStatus("Incorrect Password");
+        if (res.success) {
+            document.getElementById("unlock-error").innerText = "";
+            checkUser();
+        } else {
+            document.getElementById("unlock-error").innerText = "Incorrect PIN";
+            // Clear inputs and refocus first
+            pinInputs.forEach((input) => (input.value = ""));
+            pinInputs[0].focus();
+        }
+    } else {
+        document.getElementById("unlock-error").innerText =
+            "Please enter 4 digits";
     }
 }
 
 async function handleLockVault() {
     await chrome.runtime.sendMessage({ type: "LOCK_VAULT" });
+    // Clear inputs
+    pinInputs.forEach((input) => (input.value = ""));
     checkUser();
 }
 
@@ -348,7 +392,11 @@ async function handleGoogleLogin() {
                 }
             },
         );
-    } else showStatus(error.message);
+    } else {
+        const msgEl = document.getElementById("auth-message");
+        if (msgEl) msgEl.innerText = error.message;
+        else alert(error.message);
+    }
 }
 
 async function handleLogout() {
