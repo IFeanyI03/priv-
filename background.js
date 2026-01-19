@@ -463,6 +463,20 @@ async function resolveSharedLink(shareId, linkPassword) {
             .eq("id", shareId)
             .single();
         if (error || !data) return { success: false, error: "Link invalid" };
+
+        // --- EXPIRE CHECK: 10 MINUTES ---
+        if (data.created_at) {
+            const createdTime = new Date(data.created_at).getTime();
+            const currentTime = Date.now();
+            // 10 minutes * 60 seconds * 1000 ms
+            const expirationWindow = 10 * 60 * 1000;
+
+            if (currentTime - createdTime > expirationWindow) {
+                return { success: false, error: "Link expired" };
+            }
+        }
+        // --------------------------------
+
         const salt = base64ToArrayBuffer(data.salt);
         const key = await deriveKey(linkPassword, salt);
         const jsonString = await decryptData(data.encrypted_data, key);
