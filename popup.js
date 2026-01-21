@@ -10,6 +10,12 @@ const tabShares = document.getElementById("tab-shares");
 const passwordList = document.getElementById("password-list");
 const shareList = document.getElementById("share-list");
 
+const editSection = document.getElementById("edit-section");
+const editIdInput = document.getElementById("edit-id");
+const editSiteInput = document.getElementById("edit-site");
+const editUsernameInput = document.getElementById("edit-username");
+const editPasswordInput = document.getElementById("edit-password");
+
 // Get the 4 input boxes for the PIN
 const pinInputs = document.querySelectorAll(".pin-input");
 
@@ -32,6 +38,13 @@ document.addEventListener("DOMContentLoaded", () => {
     document
         .getElementById("btn-lock")
         ?.addEventListener("click", handleLockVault);
+
+    document.getElementById("btn-cancel-edit")?.addEventListener("click", () => showSection("app"));
+    document.getElementById("btn-save-edit")?.addEventListener("click", handleSaveEdit);
+    document.getElementById("toggle-edit-pass")?.addEventListener("click", () => {
+        const type = editPasswordInput.getAttribute("type") === "password" ? "text" : "password";
+        editPasswordInput.setAttribute("type", type);
+    });
 
     if (tabPasswords)
         tabPasswords.addEventListener("click", () => switchTab("passwords"));
@@ -152,22 +165,23 @@ async function loadCredentials() {
             div.style.borderLeft = `4px solid ${accentColor}`;
 
             div.innerHTML = `
-                <div class="bm-info" style="display:flex; align-items:center; gap:12px; flex-grow:1;">
-                    <img src="${faviconUrl}" style="width: 28px; height: 28px; border-radius: 4px;" />
-                    <div>
-                        <div style="font-weight: 600; font-size: 14px; color: #333;">${item.site || "Unknown"}</div>
-                        <div style="font-size: 12px; color: #777;">${item.username || "No User"}</div>
-                    </div>
+            <div class="bm-info" style="display:flex; align-items:center; gap:12px; flex-grow:1;">
+                <img src="${faviconUrl}" style="width: 28px; height: 28px; border-radius: 4px;" />
+                <div>
+                    <div style="font-weight: 600; font-size: 14px; color: #333;">${item.site || "Unknown"}</div>
+                    <div style="font-size: 12px; color: #777;">${item.username || "No User"}</div>
                 </div>
-                ${
-                    !isShared
-                        ? `
-                <button class="btn-share" title="Share" style="background:none; border:none; cursor:pointer; padding:5px; opacity:0.6;">
-                    🔗
-                </button>`
-                        : `<span style="font-size:9px; color:#ff9800; border:1px solid #ff9800; padding:1px 4px; border-radius:3px; font-weight:bold;">SHARED</span>`
+            </div>
+            ${!isShared
+                    ? `
+            <div style="display:flex; gap:5px;">
+                <button class="btn-share" title="Share" style="background:none; border:none; cursor:pointer; opacity:0.6;">🔗</button>
+                <button class="btn-edit" title="Edit" style="background:none; border:none; cursor:pointer; opacity:0.6;">✏️</button>
+                <button class="btn-delete" title="Delete" style="background:none; border:none; cursor:pointer; opacity:0.6; color:red;">🗑️</button>
+            </div>`
+                    : `<span style="font-size:9px; color:#ff9800; border:1px solid #ff9800; padding:1px 4px; border-radius:3px; font-weight:bold;">SHARED</span>`
                 }
-            `;
+        `;
 
             // Click to fill
             div.querySelector(".bm-info").addEventListener("click", () =>
@@ -196,6 +210,22 @@ async function loadCredentials() {
                         setTimeout(() => (btn.innerText = "🔗"), 2000);
                     },
                 );
+            }
+
+            if (!isShared) {
+                div.querySelector(".btn-delete").addEventListener("click", async (e) => {
+                    e.stopPropagation();
+                    if (confirm(`Are you sure you want to delete ${item.site}?`)) {
+                        const res = await chrome.runtime.sendMessage({ type: "DELETE_CREDENTIAL", id: item.id });
+                        if (res.success) loadCredentials();
+                        else alert(res.error);
+                    }
+                });
+
+                div.querySelector(".btn-edit").addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    openEditMode(item);
+                });
             }
             passwordList.appendChild(div);
         });
@@ -302,7 +332,7 @@ async function fillCredential(item) {
 }
 
 function showSection(name) {
-    [authSection, appSection, setupSection, unlockSection].forEach(
+    [authSection, appSection, setupSection, unlockSection, editSection].forEach(
         (el) => (el.style.display = "none"),
     );
     if (name === "auth") authSection.style.display = "block";
@@ -316,6 +346,7 @@ function showSection(name) {
             if (pinInputs[0]) pinInputs[0].focus();
         }, 50);
     }
+    if (name === "edit") editSection.style.display = "flex";
 }
 
 async function handleSetupVault() {
@@ -402,4 +433,45 @@ async function handleGoogleLogin() {
 async function handleLogout() {
     await supabaseClient.auth.signOut();
     await handleLockVault();
+}
+
+function openEditMode(item) {
+    editIdInput.value = item.id;
+    editSiteInput.value = item.site;
+    editUsernameInput.value = item.username;
+    editPasswordInput.value = item.password; // This is plain text because loadCredentials decrypted it
+    showSection("edit");
+}
+
+async function handleSaveEdit() {
+    const id = editIdInput.value;
+    const site = editSiteInput.value;
+    const username = editUsernameInput.value;
+    const password = editPasswordInput.value;
+
+    if (!site || !username || !password) {
+        alert("All fields are required");
+        return;
+    }
+
+    // Show simple loading state
+    const btn = document.getElementById("btn-save-edit");
+    const originalText = btn.innerText;
+    btn.innerText = "Saving...";
+    btn.disabled = true;
+
+    const res = await chrome.runtime.sendMessage({
+        type: "UPDATE_CREDENTIAL",
+        data: { id, site, username, password }
+    });
+
+    btn.innerText = originalText;
+    btn.disabled = false;
+
+    if (res.success) {
+        showSection("app");
+        loadCredentials();
+    } else {
+        alert("Error updating: " + res.error);
+    }
 }

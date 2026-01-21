@@ -79,6 +79,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     }
 
+    else if (message.type === "DELETE_CREDENTIAL") {
+        deleteCredential(message.id).then(sendResponse);
+        return true;
+    } else if (message.type === "UPDATE_CREDENTIAL") {
+        updateCredential(message.data).then(sendResponse);
+        return true;
+    }
+
     // SHARING
     else if (message.type === "CREATE_SHARE") {
         createShare(message.data).then(sendResponse);
@@ -491,5 +499,53 @@ async function resolveSharedLink(shareId, linkPassword) {
         };
     } catch (e) {
         return { success: false, error: "Invalid Key" };
+    }
+}
+
+async function deleteCredential(id) {
+    if (!sessionKey) return { success: false, error: "Vault locked" };
+    
+    const { data: { user } } = await supabaseClient.auth.getUser();
+    if (!user) return { success: false, error: "Not logged in" };
+
+    // Ensure we only delete items belonging to this user
+    const { error } = await supabaseClient
+        .from("credentials")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", user.id);
+
+    return { success: !error, error: error?.message };
+}
+
+async function updateCredential(data) {
+    if (!sessionKey) return { success: false, error: "Vault locked" };
+    
+    const { data: { user } } = await supabaseClient.auth.getUser();
+    if (!user) return { success: false, error: "Not logged in" };
+
+    try {
+        const updates = {
+            site: data.site,
+            username: data.username,
+            updated_at: new Date()
+        };
+
+        // Only re-encrypt if a password is provided
+        if (data.password) {
+            const encryptedPass = await encryptData(data.password, sessionKey);
+            updates.password = encryptedPass;
+        }
+
+        const { error } = await supabaseClient
+            .from("credentials")
+            .update(updates)
+            .eq("id", data.id)
+            .eq("user_id", user.id);
+
+        if (error) throw error;
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
     }
 }
