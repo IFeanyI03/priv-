@@ -3,7 +3,7 @@
     "version": "0.1.0",
     "description": "Keeping shared credentials a secret",
     "permissions": ["activeTab", "tabs", "storage", "identity", "privacy"],
-    "host_permissions": ["<all_urls>"],
+    "host_permissions": ["https://*.supabase.co/*"],
     "background": {
         "service_worker": "background.js",
         "type": "module"
