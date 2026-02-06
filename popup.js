@@ -227,17 +227,21 @@ function switchTab(tab) {
         passwordList.style.display = "block";
         shareList.style.display = "none";
         tabPasswords.style.fontWeight = "bold";
-        tabPasswords.style.color = "#153243";
+        tabPasswords.style.color = "#fff";
+        tabPasswords.style.backgroundColor = "#000";
         tabShares.style.fontWeight = "normal";
-        tabShares.style.color = "#888";
+        tabShares.style.color = "#000";
+        tabShares.style.backgroundColor = "#00000000";
         loadCredentials();
     } else {
         passwordList.style.display = "none";
         shareList.style.display = "block";
         tabShares.style.fontWeight = "bold";
-        tabShares.style.color = "#153243";
+        tabShares.style.color = "#fff";
+        tabShares.style.backgroundColor = "#000";
+        tabPasswords.style.backgroundColor = "#00000000";
         tabPasswords.style.fontWeight = "normal";
-        tabPasswords.style.color = "#888";
+        tabPasswords.style.color = "#000";
         loadActiveShares();
     }
 }
@@ -279,11 +283,13 @@ function showSection(name) {
     if (name === "edit") editSection.style.display = "flex";
 }
 
-// --- DATA LOADING & RENDERING ---
+// --- DATA LOADING & RENDERING (UPDATED ACCORDION) ---
 
 async function loadCredentials() {
-    passwordList.innerHTML =
-        "<div style='padding:20px; text-align:center; color:#888;'>Loading...</div>";
+    passwordList.innerHTML = `
+        <div style="padding:20px; text-align:center; color:#000; display:flex; flex-direction:column; align-items:center; gap:10px;">
+            <span class="material-symbols-outlined spinning">progress_activity</span>
+        </div>`;
     const response = await chrome.runtime.sendMessage({
         type: "GET_DECRYPTED_CREDENTIALS",
     });
@@ -291,7 +297,7 @@ async function loadCredentials() {
 
     if (!response.success || !response.data || response.data.length === 0) {
         passwordList.innerHTML =
-            "<div style='padding:20px; text-align:center; color:#888;'>No passwords saved yet.</div>";
+            "<div style='padding:20px; text-align:center; color:#fff;'>No passwords saved yet.</div>";
         return;
     }
 
@@ -301,16 +307,48 @@ async function loadCredentials() {
     const renderList = (items, title, isShared) => {
         if (items.length === 0) return;
 
+        // Container for the whole section (Accordion)
+        const sectionContainer = document.createElement("div");
+        sectionContainer.style.marginBottom = "15px";
+
+        // Header
         const header = document.createElement("div");
         header.style.cssText =
-            "font-size: 11px; font-weight: bold; color: #999; margin: 15px 0 8px 5px; text-transform: uppercase;";
-        header.innerText = title;
-        passwordList.appendChild(header);
+            "font-size: 11px; font-weight: bold; color: #999; margin: 0 0 8px 5px; text-transform: uppercase; cursor: pointer; display: flex; align-items: center; justify-content: space-between; user-select: none;";
+
+        const titleSpan = document.createElement("span");
+        titleSpan.innerText = `${title} (${items.length})`;
+
+        // Chevron/Arrow Icon
+        const arrow = document.createElement("span");
+        arrow.className = "material-symbols-outlined";
+        arrow.style.cssText =
+            "font-size: 18px; transition: transform 0.2s ease;";
+        arrow.innerText = "collapse_content";
+
+        header.appendChild(titleSpan);
+        header.appendChild(arrow);
+
+        // Content Area (The list of items)
+        const contentArea = document.createElement("div");
+        contentArea.style.display = "block"; // Default expanded
+
+        // Toggle Logic
+        header.addEventListener("click", () => {
+            const isClosed = contentArea.style.display === "none";
+            contentArea.style.display = isClosed ? "block" : "none";
+            // Rotate arrow: 0deg is down (expand_more), -90deg is right (closed)
+            arrow.innerText = isClosed ? "collapse_content" : "expand_content";
+        });
+
+        sectionContainer.appendChild(header);
+        sectionContainer.appendChild(contentArea);
+        passwordList.appendChild(sectionContainer);
 
         items.forEach((item) => {
             const div = document.createElement("div");
             div.style.cssText =
-                "background: white; padding: 12px; margin-bottom: 10px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #eee; display: flex; align-items: center; gap: 12px; cursor: pointer; position: relative;";
+                "background: white; padding: 12px; margin-bottom: 10px; border-radius: 17.2px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #eee; display: flex; align-items: center; gap: 12px; cursor: pointer; position: relative;";
 
             const faviconUrl =
                 item.logo ||
@@ -321,7 +359,7 @@ async function loadCredentials() {
             // HTML Structure: Icon + Info + Kebab(if user owned)
             div.innerHTML = `
                 <div class="bm-info" style="display:flex; align-items:center; gap:12px; flex-grow:1;">
-                    <img src="${faviconUrl}" style="width: 28px; height: 28px; border-radius: 4px;" />
+                    <img src="${faviconUrl}" style="width: 28px; height: 28px; border-radius: 17.2px;" />
                     <div>
                         <div style="font-weight: 600; font-size: 14px; color: #333;">${item.site || "Unknown"}</div>
                         <div style="font-size: 12px; color: #777;">${item.username || "No User"}</div>
@@ -333,9 +371,18 @@ async function loadCredentials() {
                 <div class="kebab-container">
                     <button class="kebab-btn">⋮</button>
                     <div class="dropdown-menu" style="display: none;">
-                        <div class="dropdown-item btn-share">🔗 Share</div>
-                        <div class="dropdown-item btn-edit">✏️ Edit</div>
-                        <div class="dropdown-item btn-delete delete">🗑️ Delete</div>
+                        <div class="dropdown-item btn-share">
+                            <span class="material-symbols-outlined" style="font-size:14px; vertical-align:middle;">share</span>
+                            Share
+                        </div>
+                        <div class="dropdown-item btn-edit">
+                            <span class="material-symbols-outlined" style="font-size:14px; vertical-align:middle;">edit</span>  
+                            Edit
+                        </div>
+                        <div class="dropdown-item btn-delete delete">
+                            <span class="material-symbols-outlined" style="font-size:14px; vertical-align:middle;">delete</span>
+                            Delete
+                        </div>
                     </div>
                 </div>`
                         : `<span style="font-size:9px; color:#ff9800; border:1px solid #ff9800; padding:1px 4px; border-radius:3px; font-weight:bold;">SHARED</span>`
@@ -370,23 +417,26 @@ async function loadCredentials() {
                     "click",
                     async (e) => {
                         e.stopPropagation();
-                        dropdown.style.display = "none";
-
                         const btn = e.currentTarget;
-                        const originalText = btn.innerText;
-                        btn.innerText = "⏳ Generating...";
+                        const originalHtml = btn.innerHTML;
+
+                        btn.innerHTML = `
+        <span class="material-symbols-outlined spinning" style="font-size:14px; vertical-align:middle;">progress_activity</span>
+        Generating...`;
 
                         const res = await chrome.runtime.sendMessage({
                             type: "CREATE_SHARE",
                             data: item,
                         });
+
                         if (res?.success) {
                             navigator.clipboard.writeText(res.link);
                             showToast("Link copied to clipboard!", "success");
+                            dropdown.style.display = "none";
                         } else {
                             showToast(res.error, "error");
                         }
-                        btn.innerText = originalText;
+                        btn.innerHTML = originalHtml;
                     },
                 );
 
@@ -427,7 +477,7 @@ async function loadCredentials() {
                     },
                 );
             }
-            passwordList.appendChild(div);
+            contentArea.appendChild(div);
         });
     };
 
@@ -436,8 +486,10 @@ async function loadCredentials() {
 }
 
 async function loadActiveShares() {
-    shareList.innerHTML =
-        "<div style='padding:20px; text-align:center; color:#888;'>Loading...</div>";
+    shareList.innerHTML = `
+        <div style="padding:20px; text-align:center; color:#000; display:flex; flex-direction:column; align-items:center; gap:10px;">
+            <span class="material-symbols-outlined spinning">progress_activity</span>
+        </div>`;
     const response = await chrome.runtime.sendMessage({
         type: "GET_MY_SHARES",
     });
@@ -445,14 +497,14 @@ async function loadActiveShares() {
 
     if (!response.success || !response.data || response.data.length === 0) {
         shareList.innerHTML =
-            "<div style='padding:20px; text-align:center; color:#888;'>No active share links.</div>";
+            "<div style='padding:20px; text-align:center; color:#fff;'>No active share links.</div>";
         return;
     }
 
     response.data.forEach((share) => {
         const div = document.createElement("div");
         div.style.cssText =
-            "background: white; padding: 12px; margin-bottom: 10px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;";
+            "background: white; padding: 12px; margin-bottom: 10px; border-radius: 17.2px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;";
 
         const count = share.shared_to ? share.shared_to.length : 0;
         const siteName = share.site || "Unknown";
@@ -466,18 +518,21 @@ async function loadActiveShares() {
 
         div.innerHTML = `
             <div style="display:flex; align-items:center; gap:12px;">
-                <img src="${favicon}" style="width: 32px; height: 32px; border-radius: 4px;" />
+                <img src="${favicon}" style="width: 32px; height: 32px; border-radius: 17.2px;" />
                 <div>
                     <div style="font-weight:bold; color:#333; font-size:14px;">${siteName}</div>
                     <div style="font-size:12px; color:#666;">${userName}</div>
                     <div style="display:flex; align-items:center; gap:4px; margin-top:3px;">
-                        <span style="font-size:10px; color:#555; background:#eee; padding:2px 6px; border-radius:10px;">
-                            👥 <b>${count}</b> Access
+                        <span style="font-size:10px; align-items:center; display:flex; gap: 4px; color:#555; background:#eee; padding:2px 6px; border-radius:10px;">
+                            <span class="material-symbols-outlined">group</span> 
+                            <div>${count} user${count !== 1 ? "s" : ""} have access</div>
                         </span>
                     </div>
                 </div>
             </div>
-            <button class="btn-revoke" style="background:none; border:none; cursor:pointer; color:red; padding:8px;" title="Revoke Access">🗑️</button>
+            <button class="btn-revoke" style="background:none; border:none; cursor:pointer; color:red; padding:8px;" title="Revoke Access">
+                <span class="material-symbols-outlined">delete</span>
+            </button>
         `;
 
         div.querySelector(".btn-revoke").addEventListener("click", () => {
@@ -557,6 +612,15 @@ async function handleUnlockVault() {
         });
         if (res.success) {
             document.getElementById("unlock-error").innerText = "";
+
+            // UPDATED: Check for pending save after unlock
+            const saveRes = await chrome.runtime.sendMessage({
+                type: "PROCESS_PENDING_SAVE",
+            });
+            if (saveRes && saveRes.success) {
+                showToast("Credential saved successfully!", "success");
+            }
+
             checkUser();
         } else {
             document.getElementById("unlock-error").innerText = "Incorrect PIN";

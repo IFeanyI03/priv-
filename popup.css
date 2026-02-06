@@ -1,6 +1,36 @@
 /* popup.css */
 @import url("https://fonts.googleapis.com/css2?family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600;1,700&display=swap");
 
+@font-face {
+    font-family: "Material Symbols Outlined";
+    font-style: normal;
+    font-weight: 100 700;
+    src: url("assets/fonts/material-symbols-outlined.woff2") format("woff2");
+}
+
+* {
+    /* --color: #1153243; */
+    --color: black;
+    --bg-color: #fcfcfe;
+}
+
+.material-symbols-outlined {
+    font-family: "Material Symbols Outlined";
+    font-variation-settings:
+        "FILL" 0,
+        "wght" 400,
+        "GRAD" 0,
+        "opsz" 24;
+    font-size: 16px !important; /* Increased size for better visibility */
+    display: inline-block;
+    line-height: 1;
+    text-transform: none;
+    letter-spacing: normal;
+    word-wrap: normal;
+    white-space: nowrap;
+    direction: ltr;
+}
+
 html,
 body {
     width: 100%;
@@ -9,17 +39,29 @@ body {
     padding: 0;
     overflow: hidden;
     font-family: "Titillium Web", sans-serif;
-    background-color: #b4b8ab;
-    color: #153243;
+    background-color: #f1f1f3;
+    color: var(--color);
 }
 
 .container {
     width: 100%;
     height: 100%;
-    padding: 15px;
+    padding-block: 15px;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
+    gap: 8px;
+}
+
+::-webkit-scrollbar {
+    background-color: transparent;
+    width: 6px;
+    position: absolute;
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: #ccc;
+    border-radius: 17.2px;
 }
 
 h3,
@@ -31,8 +73,7 @@ h3,
 }
 
 h3 {
-    margin-top: 0;
-    margin-bottom: 15px;
+    margin: 0;
     text-align: center;
 }
 
@@ -50,17 +91,17 @@ h3 {
     font-size: 40px;
     text-align: center;
     border: 1px solid #ccc;
-    border-radius: 6px;
+    border-radius: 17.2px;
     outline: none;
     transition:
         border 0.2s,
         box-shadow 0.2s;
-    background-color: white;
-    color: #153243;
+    background-color: #fcfcfe;
+    color: var(--color);
 }
 
 .pin-input:focus {
-    border-color: #153243;
+    border-color: var(--color);
     box-shadow: 0 0 4px rgba(21, 50, 67, 0.4);
 }
 
@@ -80,21 +121,22 @@ h3 {
     color: #888;
     padding: 0 8px;
     line-height: 1;
-    border-radius: 4px;
+    border-radius: 17.2px;
 }
 
 .kebab-btn:hover {
     background-color: #eee;
-    color: #153243;
+    color: var(--color);
+    border: none !important;
 }
 
 .dropdown-menu {
     position: absolute;
     right: 0;
     top: 100%;
-    background: white;
+    background: #fcfcfe;
     border: 1px solid #ddd;
-    border-radius: 4px;
+    border-radius: 17.2px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
     z-index: 100;
     min-width: 100px;
@@ -145,11 +187,23 @@ h3 {
 
 .bookmarks::-webkit-scrollbar-thumb {
     background-color: #ccc;
-    border-radius: 10px;
+    border-radius: 17.2px;
 }
 
 button {
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 1px solid transparent;
+}
+
+button:hover {
+    border: 1px solid var(--color) !important;
+    color: black !important;
+    background: transparent !important;
+    transition: all 0.5s ease;
 }
 
 /* --- Toast Notifications --- */
@@ -162,15 +216,15 @@ button {
     display: flex;
     flex-direction: column;
     gap: 10px;
-    width: 90%;
+    width: calc(100% - 30px);
     pointer-events: none;
 }
 
 .toast {
     background: #333;
-    color: white;
+    color: #fcfcfe;
     padding: 12px 20px;
-    border-radius: 6px;
+    border-radius: 17.2px;
     font-size: 14px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     opacity: 0;
@@ -212,9 +266,9 @@ button {
 }
 
 .custom-modal {
-    background: white;
+    background: #fcfcfe;
     padding: 20px;
-    border-radius: 8px;
+    border-radius: 17.2px;
     width: 85%;
     max-width: 300px;
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
@@ -236,7 +290,7 @@ button {
     font-weight: bold;
     font-size: 16px;
     margin-bottom: 8px;
-    color: #153243;
+    color: var(--color);
 }
 
 .modal-message {
@@ -251,7 +305,7 @@ button {
     padding: 10px;
     margin-bottom: 15px;
     border: 1px solid #ddd;
-    border-radius: 4px;
+    border-radius: 17.2px;
     box-sizing: border-box;
     font-size: 16px; /* Prevents zoom on mobile */
 }
@@ -264,7 +318,7 @@ button {
 
 .modal-btn {
     padding: 8px 16px;
-    border-radius: 4px;
+    border-radius: 17.2px;
     cursor: pointer;
     font-size: 13px;
     border: none;
@@ -279,10 +333,26 @@ button {
 
 .modal-btn.confirm {
     background: #153243;
-    color: white;
+    color: #fcfcfe;
 }
 
 .modal-btn.danger {
     background: #d32f2f;
-    color: white;
+    color: #fcfcfe;
+}
+
+/* Animation for the spinner */
+.spinning {
+    animation: spin 1s linear infinite;
+    display: inline-block;
+    transform-origin: center;
+}
+
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
 }

@@ -3,20 +3,24 @@
     <head>
         <meta charset="UTF-8" />
         <link href="popup.css" rel="stylesheet" type="text/css" />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=collapse_content,delete,edit,expand_content,group,hourglass_bottom,lock,lock_open,logout,progress_activity,share,visibility"
+            rel="stylesheet"
+        />
+        <link rel="icon" type="image/png" href="assets/prive32.png" />
+        <title>Privé</title>
         <script type="module" src="popup.js"></script>
     </head>
 
     <body>
         <div class="container">
-            <h3>My Pass Manager</h3>
+            <h3>Privé</h3>
 
             <div
                 id="setup-section"
-                style="display: none; text-align: center; margin-top: 50px"
+                style="display: none; padding-inline: 15px; text-align: center"
             >
-                <p style="color: #666; margin-bottom: 20px">
-                    Create a 4-digit Master PIN.
-                </p>
+                <p style="color: #666">Create a 4-digit Master PIN.</p>
                 <input
                     type="password"
                     id="setup-pass"
@@ -28,7 +32,7 @@
                         padding: 12px;
                         margin-bottom: 15px;
                         border: 1px solid #ccc;
-                        border-radius: 4px;
+                        border-radius: 17.2px;
                         box-sizing: border-box;
                         text-align: center;
                         letter-spacing: 5px;
@@ -42,7 +46,7 @@
                         background: #4caf50;
                         color: white;
                         border: none;
-                        border-radius: 4px;
+                        border-radius: 17.2px;
                         cursor: pointer;
                     "
                 >
@@ -52,7 +56,7 @@
 
             <div
                 id="unlock-section"
-                style="display: none; text-align: center; margin-top: 50px"
+                style="display: none; padding-inline: 15px; text-align: center"
             >
                 <p style="color: #666; margin-bottom: 20px">
                     Enter Master PIN to unlock.
@@ -93,10 +97,11 @@
                         background: #333;
                         color: white;
                         border: none;
-                        border-radius: 4px;
+                        border-radius: 17.2px;
                         cursor: pointer;
                     "
                 >
+                    <span class="material-symbols-outlined">lock_open</span>
                     Unlock
                 </button>
                 <div
@@ -105,7 +110,7 @@
                 ></div>
             </div>
 
-            <div id="auth-section" style="display: none">
+            <div id="auth-section" style="display: none; padding-inline: 15px">
                 <p style="text-align: center; margin-bottom: 15px">
                     Sign in to sync your passwords
                 </p>
@@ -117,7 +122,7 @@
                         width: 100%;
                         padding: 12px;
                         border: none;
-                        border-radius: 4px;
+                        border-radius: 17.2px;
                         cursor: pointer;
                         font-weight: bold;
                     "
@@ -141,10 +146,10 @@
             >
                 <div
                     style="
+                        flex-shrink: 0;
                         display: flex;
+                        padding-inline: 15px;
                         justify-content: space-around;
-                        margin-bottom: 10px;
-                        border-bottom: 1px solid #eee;
                         padding-bottom: 10px;
                     "
                 >
@@ -153,9 +158,12 @@
                         style="
                             font-weight: bold;
                             cursor: pointer;
-                            color: #153243;
+                            color: #fff;
                             flex: 1;
                             text-align: center;
+                            background-color: #000;
+                            padding: 8px;
+                            border-radius: 17.2px;
                         "
                         >Passwords</span
                     >
@@ -163,9 +171,11 @@
                         id="tab-shares"
                         style="
                             cursor: pointer;
-                            color: #888;
+                            color: #000;
                             flex: 1;
                             text-align: center;
+                            padding: 8px;
+                            border-radius: 17.2px;
                         "
                         >Shared Links</span
                     >
@@ -173,10 +183,12 @@
 
                 <div
                     style="
-                        flex-grow: 1;
+                        flex: 1;
                         overflow-y: auto;
                         overflow-x: hidden;
-                        padding-right: 5px;
+                        padding-right: 9px;
+                        padding-left: 15px;
+                        max-height: 422px;
                     "
                 >
                     <div id="password-list"></div>
@@ -185,38 +197,44 @@
 
                 <div
                     style="
-                        margin-top: auto;
-                        padding-top: 10px;
-                        border-top: 1px solid #eee;
+                        display: flex;
+                        gap: 8px;
+                        flex-shrink: 0;
+                        padding-inline: 15px;
+                        max-height: max-content;
+                        /* margin-top: auto; */
                     "
                 >
                     <button
                         id="btn-lock"
                         style="
-                            width: 100%;
+                            width: calc(50% - 4px);
                             padding: 10px;
-                            margin-bottom: 5px;
-                            background: #666;
+                            /* margin-bottom: 5px; */
+                            background: var(--color);
                             color: white;
                             border: none;
-                            border-radius: 10px;
+                            border-radius: 17.2px;
                             cursor: pointer;
                         "
                     >
+                        <span class="material-symbols-outlined">lock</span>
                         Lock Vault
                     </button>
                     <button
                         id="btn-logout"
                         style="
-                            width: 100%;
+                            width: calc(50% - 4px);
                             padding: 10px;
-                            background: transparent;
-                            border: 1px solid #ddd;
-                            color: #555;
-                            border-radius: 10px;
+                            background: var(--color);
+
+                            /* border: 1px solid #ddd; */
+                            color: #fff;
+                            border-radius: 17.2px;
                             cursor: pointer;
                         "
                     >
+                        <span class="material-symbols-outlined">logout</span>
                         Log Out
                     </button>
                 </div>
@@ -224,7 +242,12 @@
 
             <div
                 id="edit-section"
-                style="display: none; flex-direction: column; padding-top: 20px"
+                style="
+                    display: none;
+                    padding-inline: 15px;
+                    flex-direction: column;
+                    padding-top: 20px;
+                "
             >
                 <h3 style="text-align: center">Edit Credential</h3>
 
@@ -240,7 +263,7 @@
                         padding: 8px;
                         margin-bottom: 12px;
                         border: 1px solid #ccc;
-                        border-radius: 4px;
+                        border-radius: 17.2px;
                     "
                 />
 
@@ -254,7 +277,7 @@
                         padding: 8px;
                         margin-bottom: 12px;
                         border: 1px solid #ccc;
-                        border-radius: 4px;
+                        border-radius: 17.2px;
                     "
                 />
 
@@ -269,19 +292,16 @@
                             flex-grow: 1;
                             padding: 8px;
                             border: 1px solid #ccc;
-                            border-radius: 4px;
+                            border-radius: 17.2px;
                         "
                     />
                     <button
                         id="toggle-edit-pass"
-                        style="
-                            background: none;
-                            border: 1px solid #ccc;
-                            border-radius: 4px;
-                            cursor: pointer;
-                        "
+                        style="background: none; border: none; cursor: pointer"
                     >
-                        👁️
+                        <span class="material-symbols-outlined"
+                            >visibility</span
+                        >
                     </button>
                 </div>
 
@@ -294,7 +314,7 @@
                             background: transparent;
                             border: 1px solid #888;
                             color: #333;
-                            border-radius: 4px;
+                            border-radius: 17.2px;
                             cursor: pointer;
                         "
                     >
@@ -308,7 +328,7 @@
                             background: #153243;
                             color: white;
                             border: none;
-                            border-radius: 4px;
+                            border-radius: 17.2px;
                             cursor: pointer;
                         "
                     >
@@ -317,9 +337,7 @@
                 </div>
             </div>
         </div>
-
         <div id="toast-container"></div>
-
         <div id="modal-overlay">
             <div class="custom-modal">
                 <div class="modal-title" id="modal-title">Title</div>

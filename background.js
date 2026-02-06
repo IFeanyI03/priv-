@@ -13,14 +13,19 @@ import {
 
 let sessionKey = null;
 let popupWindowId = null;
+let pendingSaveData = null; // Store pending credential save
 const pendingShareKeys = new Map();
 
 // --- WINDOW MANAGEMENT ---
-chrome.windows.onRemoved.addListener((winId) => {
-    if (winId === popupWindowId) popupWindowId = null;
-});
+if (typeof chrome !== "undefined" && chrome.windows) {
+    chrome.windows.onRemoved.addListener((winId) => {
+        if (winId === popupWindowId) popupWindowId = null;
+    });
+}
 
 function openOrFocusPopup() {
+    if (typeof chrome === "undefined" || !chrome.windows) return;
+
     if (popupWindowId) {
         chrome.windows.get(popupWindowId, {}, (win) => {
             if (chrome.runtime.lastError || !win) createPopup();
@@ -46,87 +51,83 @@ function createPopup() {
 
 // --- MESSAGE ROUTER ---
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    // Vault
-    if (message.type === "CHECK_VAULT_STATUS") {
-        checkVaultStatus().then(sendResponse);
-        return true;
-    }
-    if (message.type === "SETUP_VAULT") {
-        setupVault(message.password).then(sendResponse);
-        return true;
-    }
-    if (message.type === "UNLOCK_VAULT") {
-        unlockVault(message.password).then(sendResponse);
-        return true;
-    }
-    if (message.type === "LOCK_VAULT") {
-        sessionKey = null;
-        pendingShareKeys.clear();
-        sendResponse({ success: true });
-        return true;
-    }
+    const handleAsync = async () => {
+        try {
+            // Vault
+            if (message.type === "CHECK_VAULT_STATUS")
+                return await checkVaultStatus();
+            if (message.type === "SETUP_VAULT")
+                return await setupVault(message.password);
+            if (message.type === "UNLOCK_VAULT")
+                return await unlockVault(message.password);
+            if (message.type === "LOCK_VAULT") {
+                sessionKey = null;
+                pendingShareKeys.clear();
+                return { success: true };
+            }
 
-    // Data
-    if (message.type === "GET_DECRYPTED_CREDENTIALS") {
-        getDecryptedCredentials().then(sendResponse);
-        return true;
-    }
-    if (message.type === "SAVE_PASSWORD") {
-        handleSavePassword(message.data).then(sendResponse);
-        return true;
-    }
-    if (message.type === "UPDATE_CREDENTIAL") {
-        updateCredential(message.data).then(sendResponse);
-        return true;
-    }
-    if (message.type === "DELETE_CREDENTIAL") {
-        deleteCredential(message.id).then(sendResponse);
-        return true;
-    }
+            // Data
+            if (message.type === "GET_DECRYPTED_CREDENTIALS")
+                return await getDecryptedCredentials();
+            if (message.type === "SAVE_PASSWORD")
+                return await handleSavePassword(message.data);
+            if (message.type === "UPDATE_CREDENTIAL")
+                return await updateCredential(message.data);
+            if (message.type === "DELETE_CREDENTIAL")
+                return await deleteCredential(message.id);
 
-    // Sharing
-    if (message.type === "CREATE_SHARE") {
-        createShare(message.data).then(sendResponse);
-        return true;
-    }
-    if (message.type === "GET_MY_SHARES") {
-        getMyShares().then(sendResponse);
-        return true;
-    }
-    if (message.type === "RESOLVE_SHARED_LINK") {
-        resolveSharedLink(message.id, message.key).then(sendResponse);
-        return true;
-    }
-    if (message.type === "SAVE_SHARE_ACCESS") {
-        saveShareAccess(message.data).then(sendResponse);
-        return true;
-    }
-    if (message.type === "REVOKE_SHARE") {
-        revokeShare(message.id).then(sendResponse);
-        return true;
-    }
+            // Pending Save Processing (Called by Popup after unlock)
+            if (message.type === "PROCESS_PENDING_SAVE") {
+                if (!sessionKey || !pendingSaveData) return { success: false };
+                const res = await handleSavePassword(pendingSaveData);
+                if (res.success) pendingSaveData = null; // Clear on success
+                return res;
+            }
 
-    // UI
-    if (message.type === "OPEN_POPUP") {
-        if (sender.tab?.id)
-            chrome.storage.local.set({ target_tab_id: sender.tab.id });
-        openOrFocusPopup();
-    }
-    if (message.type === "TRIGGER_PRIVACY_MODE") {
-        chrome.privacy.services.passwordSavingEnabled.set({ value: false });
-        setTimeout(
-            () =>
+            // Sharing
+            if (message.type === "CREATE_SHARE")
+                return await createShare(message.data);
+            if (message.type === "GET_MY_SHARES") return await getMyShares();
+            if (message.type === "RESOLVE_SHARED_LINK")
+                return await resolveSharedLink(message.id, message.key);
+            if (message.type === "SAVE_SHARE_ACCESS")
+                return await saveShareAccess(message.data);
+            if (message.type === "REVOKE_SHARE")
+                return await revokeShare(message.id);
+
+            // UI
+            if (message.type === "OPEN_POPUP") {
+                if (sender.tab?.id)
+                    chrome.storage.local.set({ target_tab_id: sender.tab.id });
+                openOrFocusPopup();
+                return { success: true };
+            }
+            if (message.type === "TRIGGER_PRIVACY_MODE") {
                 chrome.privacy.services.passwordSavingEnabled.set({
-                    value: true,
-                }),
-            120000,
-        );
-        sendResponse({ success: true });
-        return true;
-    }
+                    value: false,
+                });
+                setTimeout(
+                    () =>
+                        chrome.privacy.services.passwordSavingEnabled.set({
+                            value: true,
+                        }),
+                    120000,
+                );
+                return { success: true };
+            }
+        } catch (err) {
+            console.error("Handler Error:", err);
+            return { success: false, error: err.message };
+        }
+    };
+
+    handleAsync().then(sendResponse);
+    return true; // Keep channel open
 });
 
-chrome.action.onClicked.addListener(openOrFocusPopup);
+if (typeof chrome !== "undefined" && chrome.action) {
+    chrome.action.onClicked.addListener(openOrFocusPopup);
+}
 
 // ==========================================
 //  VAULT HELPERS
@@ -148,6 +149,7 @@ async function checkVaultStatus() {
         .select("*")
         .eq("id", user.id)
         .single();
+
     if (profile) {
         await chrome.storage.local.set({ [storageKey]: profile });
         return { status: "locked" };
@@ -161,6 +163,7 @@ async function setupVault(masterPassword) {
             data: { user },
         } = await supabaseClient.auth.getUser();
         if (!user) return { success: false, error: "Not logged in" };
+
         const salt = generateSalt();
         const key = await deriveKey(masterPassword, salt);
         const validationToken = await encryptData("VALID", key);
@@ -173,6 +176,7 @@ async function setupVault(masterPassword) {
             .from("profiles")
             .upsert({ id: user.id, ...vaultData, updated_at: new Date() });
         await chrome.storage.local.set({ [`vault_${user.id}`]: vaultData });
+
         sessionKey = key;
         return { success: true };
     } catch (err) {
@@ -186,8 +190,9 @@ async function unlockVault(masterPassword) {
             data: { user },
         } = await supabaseClient.auth.getUser();
         if (!user) return { success: false, error: "Not logged in" };
+
         const storageKey = `vault_${user.id}`;
-        const local = await chrome.storage.local.get([storageKey]);
+        let local = await chrome.storage.local.get([storageKey]);
         let vaultData = local[storageKey];
 
         if (!vaultData) {
@@ -208,35 +213,127 @@ async function unlockVault(masterPassword) {
             base64ToArrayBuffer(vaultData.vault_salt),
         );
         try {
-            if ((await decryptData(vaultData.vault_validator, key)) !== "VALID")
-                throw new Error();
-        } catch {
+            const check = await decryptData(vaultData.vault_validator, key);
+            if (check !== "VALID") throw new Error("Invalid Validation");
+        } catch (e) {
             return { success: false, error: "Incorrect password" };
         }
 
         sessionKey = key;
         return { success: true };
-    } catch {
+    } catch (e) {
         return { success: false, error: "Unlock failed" };
     }
 }
 
 // ==========================================
-//  CORE FUNCTIONS (Standard RLS - No RPC)
+//  CORE FUNCTIONS
 // ==========================================
 
-async function handleSavePassword(data) {
+async function getDecryptedCredentials() {
     if (!sessionKey) return { success: false, error: "Vault locked" };
     const {
         data: { user },
     } = await supabaseClient.auth.getUser();
+    const allCredentials = [];
 
-    // 1. Generate & Wrap Item Key
+    const { data: personal } = await supabaseClient
+        .from("credentials")
+        .select("*")
+        .eq("user_id", user.id);
+
+    if (personal) {
+        for (const item of personal) {
+            try {
+                let plainPass;
+                if (item.key_blob) {
+                    const itemKey = await unwrapKey(item.key_blob, sessionKey);
+                    plainPass = await decryptData(item.password, itemKey);
+                } else {
+                    plainPass = await decryptData(item.password, sessionKey);
+                }
+
+                allCredentials.push({
+                    ...item,
+                    password: plainPass,
+                    is_shared: false,
+                });
+            } catch (e) {
+                console.warn(`Skipping corrupted item: ${item.site}`, e);
+            }
+        }
+    }
+
+    const { data: shares } = await supabaseClient
+        .from("credential_shares")
+        .select(
+            `
+            *,
+            credentials ( id, site, username, password, logo, color )
+        `,
+        )
+        .contains("shared_to", [user.id]);
+
+    if (shares) {
+        for (const share of shares) {
+            try {
+                if (!share.credentials) continue;
+
+                const myKeyBlob = share.recipient_metadata[user.id];
+                if (myKeyBlob) {
+                    const itemKey = await unwrapKey(myKeyBlob, sessionKey);
+                    const plainPass = await decryptData(
+                        share.credentials.password,
+                        itemKey,
+                    );
+
+                    allCredentials.push({
+                        id: share.credentials.id,
+                        site: share.credentials.site,
+                        username: share.credentials.username,
+                        password: plainPass,
+                        color: "#ff9800",
+                        logo: share.credentials.logo,
+                        is_shared: true,
+                    });
+                }
+            } catch (e) {
+                console.warn(`Skipping corrupted share: ${share.id}`, e);
+            }
+        }
+    }
+
+    return { success: true, data: allCredentials };
+}
+
+async function handleSavePassword(data) {
+    // UPDATED: Check for lock and open popup
+    if (!sessionKey) {
+        pendingSaveData = data;
+        openOrFocusPopup();
+        return {
+            success: false,
+            error: "Vault locked. Please enter PIN in the popup.",
+        };
+    }
+
+    const {
+        data: { user },
+    } = await supabaseClient.auth.getUser();
+
+    const { data: existing } = await supabaseClient
+        .from("credentials")
+        .select("id")
+        .eq("site", data.site)
+        .eq("username", data.username)
+        .eq("user_id", user.id);
+    if (existing && existing.length > 0)
+        return { success: false, error: "Duplicate credential." };
+
     const itemKey = await generateItemKey();
     const keyBlob = await wrapKey(itemKey, sessionKey);
     const encryptedPass = await encryptData(data.password, itemKey);
 
-    // 2. Standard Insert
     const { error } = await supabaseClient.from("credentials").insert({
         user_id: user.id,
         site: data.site,
@@ -257,14 +354,12 @@ async function updateCredential(data) {
     } = await supabaseClient.auth.getUser();
 
     try {
-        // 1. Fetch existing key
         let { data: cred } = await supabaseClient
             .from("credentials")
             .select("key_blob")
             .eq("id", data.id)
             .single();
 
-        // Auto-Migration for Legacy Items
         let itemKey;
         if (!cred?.key_blob) {
             itemKey = await generateItemKey();
@@ -277,10 +372,8 @@ async function updateCredential(data) {
             itemKey = await unwrapKey(cred.key_blob, sessionKey);
         }
 
-        // 2. Encrypt with Item Key
         const encryptedPass = await encryptData(data.password, itemKey);
 
-        // 3. Standard Update
         const { error } = await supabaseClient
             .from("credentials")
             .update({
@@ -299,81 +392,7 @@ async function updateCredential(data) {
     }
 }
 
-async function getDecryptedCredentials() {
-    if (!sessionKey) return { success: false, error: "Vault locked" };
-    const {
-        data: { user },
-    } = await supabaseClient.auth.getUser();
-    const allCredentials = [];
-
-    // 1. Personal Items (Standard Select)
-    const { data: personal } = await supabaseClient
-        .from("credentials")
-        .select("*")
-        .eq("user_id", user.id);
-    if (personal) {
-        for (const item of personal) {
-            try {
-                if (item.key_blob) {
-                    const itemKey = await unwrapKey(item.key_blob, sessionKey);
-                    allCredentials.push({
-                        ...item,
-                        password: await decryptData(item.password, itemKey),
-                        is_shared: false,
-                    });
-                } else {
-                    allCredentials.push({
-                        ...item,
-                        password: await decryptData(item.password, sessionKey),
-                        is_shared: false,
-                    });
-                }
-            } catch (e) {}
-        }
-    }
-
-    // 2. Shared Items (Standard Select with Filter)
-    const { data: shares } = await supabaseClient
-        .from("credential_shares")
-        .select(
-            `
-            *,
-            credentials ( id, site, username, password, logo, color )
-        `,
-        )
-        .contains("shared_to", [user.id]);
-
-    if (shares) {
-        for (const share of shares) {
-            try {
-                if (!share.credentials) continue;
-                // Get User's copy of the key from metadata
-                const myKeyBlob = share.recipient_metadata[user.id];
-                if (myKeyBlob) {
-                    const itemKey = await unwrapKey(myKeyBlob, sessionKey);
-                    allCredentials.push({
-                        id: share.credentials.id,
-                        site: share.credentials.site,
-                        username: share.credentials.username,
-                        password: await decryptData(
-                            share.credentials.password,
-                            itemKey,
-                        ), // LIVE password
-                        color: "#ff9800",
-                        logo: share.credentials.logo,
-                        is_shared: true,
-                    });
-                }
-            } catch (e) {}
-        }
-    }
-    return { success: true, data: allCredentials };
-}
-
-// ==========================================
-//  SHARING (Standard RLS)
-// ==========================================
-
+// UPDATED: Prevent duplicates, update existing
 async function createShare(item) {
     try {
         const {
@@ -381,18 +400,18 @@ async function createShare(item) {
         } = await supabaseClient.auth.getUser();
         if (!sessionKey) throw new Error("Vault locked");
 
-        // 1. Get Item Key (Auto-migrate if needed)
         let { data: cred } = await supabaseClient
             .from("credentials")
             .select("key_blob, password")
             .eq("id", item.id)
             .single();
-        let itemKey;
 
+        let itemKey;
         if (!cred?.key_blob) {
             itemKey = await generateItemKey();
             const newKeyBlob = await wrapKey(itemKey, sessionKey);
-            const newEncPass = await encryptData(item.password, itemKey); // item.password is plain from popup
+            const newEncPass = await encryptData(item.password, itemKey);
+
             await supabaseClient
                 .from("credentials")
                 .update({ key_blob: newKeyBlob, password: newEncPass })
@@ -401,25 +420,52 @@ async function createShare(item) {
             itemKey = await unwrapKey(cred.key_blob, sessionKey);
         }
 
-        // 2. Link Key Logic
         const linkPassword = crypto.randomUUID();
         const salt = generateSalt();
         const linkKey = await deriveKey(linkPassword, salt);
         const wrappedKeyForLink = await wrapKey(itemKey, linkKey);
 
-        // 3. Standard Insert
-        const { data, error } = await supabaseClient
+        // 1. Check if share already exists
+        const { data: existingShare } = await supabaseClient
             .from("credential_shares")
-            .insert({
-                credential_id: item.id,
-                share_by: user.id,
-                shared_to: [],
-                recipient_metadata: {},
-                encrypted_data: wrappedKeyForLink,
-                salt: arrayBufferToBase64(salt.buffer),
-            })
-            .select()
-            .single();
+            .select("id")
+            .eq("credential_id", item.id)
+            .eq("share_by", user.id)
+            .maybeSingle();
+
+        let data, error;
+
+        if (existingShare) {
+            // 2. UPDATE existing
+            const res = await supabaseClient
+                .from("credential_shares")
+                .update({
+                    encrypted_data: wrappedKeyForLink,
+                    salt: arrayBufferToBase64(salt.buffer),
+                    created_at: new Date().toISOString(),
+                })
+                .eq("id", existingShare.id)
+                .select()
+                .single();
+            data = res.data;
+            error = res.error;
+        } else {
+            // 3. INSERT new
+            const res = await supabaseClient
+                .from("credential_shares")
+                .insert({
+                    credential_id: item.id,
+                    share_by: user.id,
+                    shared_to: [],
+                    recipient_metadata: {},
+                    encrypted_data: wrappedKeyForLink,
+                    salt: arrayBufferToBase64(salt.buffer),
+                })
+                .select()
+                .single();
+            data = res.data;
+            error = res.error;
+        }
 
         if (error) throw error;
         return {
@@ -433,8 +479,6 @@ async function createShare(item) {
 
 async function resolveSharedLink(shareId, linkPassword) {
     try {
-        // 1. Standard Select (allowed by 'Public read shares' policy)
-        // Note: We join credentials to get the live data
         const { data, error } = await supabaseClient
             .from("credential_shares")
             .select(`*, credentials ( site, username, password, logo, color )`)
@@ -442,9 +486,8 @@ async function resolveSharedLink(shareId, linkPassword) {
             .single();
 
         if (error || !data || !data.credentials)
-            return { success: false, error: "Link invalid or revoked" };
+            return { success: false, error: "Link invalid" };
 
-        // 2. Expiration (10 mins)
         if (
             data.created_at &&
             Date.now() - new Date(data.created_at).getTime() > 600000
@@ -452,7 +495,6 @@ async function resolveSharedLink(shareId, linkPassword) {
             return { success: false, error: "Link expired" };
         }
 
-        // 3. Decrypt
         const linkKey = await deriveKey(
             linkPassword,
             base64ToArrayBuffer(data.salt),
@@ -484,7 +526,7 @@ async function saveShareAccess(data) {
 
     try {
         const itemKey = pendingShareKeys.get(data.share_id);
-        if (!itemKey) throw new Error("Link expired. Reload.");
+        if (!itemKey) throw new Error("Link expired or key missing.");
 
         const myKeyBlob = await wrapKey(itemKey, sessionKey);
         const { data: share } = await supabaseClient

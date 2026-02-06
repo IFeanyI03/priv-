@@ -190,7 +190,7 @@ const addSaveButton = () => {
         if (input.parentNode.querySelector(".pass-save-btn")) return;
 
         const saveBtn = document.createElement("img");
-        saveBtn.src = chrome.runtime.getURL("assets/save.png");
+        saveBtn.src = chrome.runtime.getURL("assets/prive128.png");
         saveBtn.className = "pass-save-btn";
         saveBtn.style.cssText =
             "cursor:pointer; width:20px; height:20px; margin-left:5px; vertical-align:middle; display:inline-block; z-index:9999; position:relative;";
@@ -227,7 +227,7 @@ const addSaveButton = () => {
                     (res) => {
                         if (res?.success)
                             showPrivToast("Credential saved!", "success");
-                        else showPrivToast("Error: " + res.error, "error");
+                        else showPrivToast(res.error, "error");
                     },
                 );
             } else {

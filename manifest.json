@@ -1,7 +1,7 @@
 {
-    "name": "privé extension",
+    "name": "Privé",
     "version": "0.1.0",
-    "description": "Keeping shared credentials a secret",
+    "description": "Secure password manager with sharing capabilities.",
     "permissions": ["activeTab", "tabs", "storage", "identity", "privacy"],
     "host_permissions": ["https://*.supabase.co/*"],
     "background": {
@@ -16,12 +16,36 @@
     ],
     "web_accessible_resources": [
         {
-            "resources": ["assets/save.png"],
+            "resources": [
+                "assets/prive16.png",
+                "assets/prive32.png",
+                "assets/prive64.png",
+                "assets/prive128.png",
+                "popup.html",
+                "popup.css"
+            ],
+
             "matches": ["<all_urls>"]
         }
     ],
+
     "action": {
-        "default_title": "privé"
+        "default_title": "Privé",
+        "default_icon": {
+            "16": "assets/prive16.png",
+            "32": "assets/prive32.png",
+            "48": "assets/prive64.png",
+            "128": "assets/prive128.png"
+        }
+    },
+    "icons": {
+        "16": "assets/prive16.png",
+        "32": "assets/prive32.png",
+        "48": "assets/prive64.png",
+        "128": "assets/prive128.png"
+    },
+    "content_security_policy": {
+        "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com;"
     },
     "manifest_version": 3
 }
